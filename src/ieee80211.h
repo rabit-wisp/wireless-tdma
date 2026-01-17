@@ -1,3 +1,6 @@
+#pragma once
+#ifndef _IEEE80211_H_
+#define _IEEE80211_H_
 #include <arpa/inet.h>
 
 // Radiotap header structure (simplified)
@@ -33,10 +36,11 @@ struct beacon_fixed_params {
     uint16_t capability_info;
 } __attribute__((packed));
 
+/*
 // Function to print MAC address
 void print_mac(const uint8_t* mac) {
     for (int i = 0; i < 6; i++) {
-        std::cout << std::hex << std::setw(2) << std::setfill('0') 
+        std::cout << std::hex << std::setw(2) << std::setfill('0')
                   << static_cast<int>(mac[i]);
         if (i < 5) std::cout << ":";
     }
@@ -64,3 +68,6 @@ std::string parse_ssid(const uint8_t* data, int len) {
     }
     return "<Unknown>";
 }
+*/
+
+#endif // _IEEE80211_H_

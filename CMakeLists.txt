@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(tdma-test LANGUAGES CXX)
+project(tc-tdma LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -26,29 +26,12 @@ pkg_check_modules(ZMQ REQUIRED libzmq)
 pkg_check_modules(PCAP REQUIRED libpcap)
 pkg_check_modules(LIBNL REQUIRED libnl-3.0 libnl-genl-3.0 libnl-route-3.0)
 
-add_executable(tdma-temp src/temp.cpp)
-target_include_directories(tdma-temp PRIVATE
-                                     ${docopt_SOURCE_DIR}
-                                     ${LIBNL_INCLUDE_DIRS}
-                                     ${PCAP_INCLUDE_DIRS})
+add_executable(tc-tdma src/main.cpp src/tdma.cpp)
+target_include_directories(tc-tdma PRIVATE ${docopt_SOURCE_DIR}
+                                           ${LIBNL_INCLUDE_DIRS}
+                                           ${PCAP_INCLUDE_DIRS})
 
-target_link_libraries(tdma-temp PRIVATE 
-                                        ${PCAP_LIBRARIES}
-                                        ${LIBNL_LIBRARIES}
-                                        nl-route-3
-                                        docopt_s)
-
-
-
-
-add_executable(tdma-test src/main.cpp)
-target_include_directories(tdma-test PRIVATE
-                                     ${docopt_SOURCE_DIR}
-                                     ${LIBNL_INCLUDE_DIRS}
-                                     ${PCAP_INCLUDE_DIRS})
-
-target_link_libraries(tdma-test PRIVATE 
-                                        ${PCAP_LIBRARIES}
+target_link_libraries(tc-tdma PRIVATE ${PCAP_LIBRARIES}
                                         ${LIBNL_LIBRARIES}
                                         nl-route-3
                                         docopt_s)
