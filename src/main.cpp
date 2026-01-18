@@ -1,21 +1,15 @@
 #include <iostream>
-#include <pcap.h>
 #include <chrono>
 #include <csignal>
 #include <atomic>
-#include <net/if.h>
+
 #include "docopt.h"
-
-
+#include "tdma.h"
+#include "beacon.h"
 #include "qdisc.h"
 
-std::atomic<bool> run{true};
-
-void signal_handler(int signal) {
-    if (signal == SIGHUP || signal == SIGINT || signal == SIGTERM) {
-        run = false;
-    }
-}
+using std::chrono::operator""ms;
+using std::chrono::operator""us;
 
 
 static const char USAGE[] =
@@ -57,114 +51,41 @@ int main(int argc, const char* argv[])
     bool verbose = args["--verbose"].asBool();
     std::optional<size_t> pollCount = args["--count"] ? std::optional<size_t>(args["--count"].asLong()) : std::nullopt;
 
-    unsigned int if_index = if_nametoindex(interface.c_str());
-    if (if_index == 0) {
-        std::cerr << "Interface " << interface << " not found" << std::endl;
-        return 1;
+    try {
+        QdiscController plug(interface, verbose); // qdisc plug controller
+
+        static TDMAScheduler scheduler(TDMAScheduler::timestamp::clock::now() + 1000ms,
+                                       std::chrono::microseconds(100 * 1024), // assume default epoch duration of 100TUs
+                                       slotNumber,
+                                       std::chrono::microseconds(slotDuration),
+                                       [&](){ plug.tx_pause(); },
+                                       [&](){ plug.tx_resume(); },
+                                       pollCount,
+                                       verbose);
+
+        // 80211 BSS beacon broadcast listener
+        Beacon beacon(interface,
+                      [&](auto... args){ scheduler.resynchronize(args...); },
+                      verbose);
+
+        // add a signal handler so that we correctly destroy all resources since they have OS level RAII
+        auto signal_handler = [](int signal) {
+            if (signal == SIGHUP || signal == SIGINT || signal == SIGTERM) {
+                scheduler.terminate(); // cause the scheduler loop to terminate, causing execution to leave the current context
+            }
+        };
+
+        std::signal(SIGHUP, signal_handler);
+        std::signal(SIGINT, signal_handler);
+        std::signal(SIGTERM, signal_handler);
+
+        beacon.listen(); // start listening on beacon broadcasts
+        scheduler.run(); // run the TDMA scheduler
+
+    } catch ( std::exception& e ) {
+
+        std::cerr << "exiting on unhandled exception: " << e.what() << std::endl;
     }
-
-    std::signal(SIGHUP, signal_handler);
-    std::signal(SIGINT, signal_handler);
-    std::signal(SIGTERM, signal_handler);
-
-    char errbuf[PCAP_ERRBUF_SIZE];
-
-    std::cout << "Starting WiFi beacon detection on interface: " << interface << std::endl;
-    //std::cout << "Note: Interface must be in monitor mode!" << std::endl;
-    std::cout << std::string(80, '=') << std::endl;
-    std::cout << "Capturing beacon frames... (Press Ctrl+C to stop)" << std::endl;
-    std::cout << std::string(80, '-') << std::endl;
-
-    pcap_t *handle = pcap_create(interface.c_str(), errbuf);
-    if (handle == nullptr) {
-        std::cerr << "Error creating pcap handle: " << errbuf << std::endl;
-        return 1;
-    }
-
-    // Set interface to monitor mode (rfmon)
-    if (pcap_set_rfmon(handle, 1) != 0) {
-        std::cerr << "Warning: Could not set monitor mode on interface" << std::endl;
-    }
-
-    // Set snapshot length
-    if (pcap_set_snaplen(handle, 65535) != 0) {
-        std::cerr << "Error setting snaplen" << std::endl;
-        pcap_close(handle);
-        return 1;
-    }
-
-    // Set promiscuous mode
-    if (pcap_set_promisc(handle, 1) != 0) {
-        std::cerr << "Error setting promiscuous mode" << std::endl;
-        pcap_close(handle);
-        return 1;
-    }
-
-    // Set timeout to minimal value
-    if (pcap_set_timeout(handle, 1) != 0) {
-        std::cerr << "Error setting timeout" << std::endl;
-        pcap_close(handle);
-        return 1;
-    }
-
-    // Set immediate mode to disable buffering for real-time delivery
-    if (pcap_set_immediate_mode(handle, 1) != 0) {
-        std::cerr << "Warning: Could not enable immediate mode" << std::endl;
-    }
-
-    // Set smaller buffer size for lower latency
-    if (pcap_set_buffer_size(handle, 2*1024*1024) != 0) {
-        std::cerr << "Warning: Could not set buffer size" << std::endl;
-    }
-
-    // Activate the handle
-    int status = pcap_activate(handle);
-    if (status < 0) {
-        std::cerr << "Error activating pcap: " << pcap_geterr(handle) << std::endl;
-        pcap_close(handle);
-        return 1;
-    } else if (status > 0) {
-        std::cerr << "Warning: " << pcap_statustostr(status) << std::endl;
-    }
-
-    // Verify we're in monitor mode
-    if (pcap_datalink(handle) != DLT_IEEE802_11_RADIO) {
-        std::cerr << "Error: Interface not in monitor mode (expected radiotap headers)" << std::endl;
-        std::cerr << "Current datalink type: " << pcap_datalink(handle) << std::endl;
-        std::cerr << "Please enable monitor mode manually first" << std::endl;
-        pcap_close(handle);
-        return 1;
-    }
-    // Set up filter for management frames (type 0)
-    struct bpf_program fp;
-    const char* filter_exp = "type mgt subtype beacon";
-
-    if (pcap_compile(handle, &fp, filter_exp, 0, PCAP_NETMASK_UNKNOWN) == -1) {
-        std::cerr << "Error compiling filter: " << pcap_geterr(handle) << std::endl;
-        pcap_close(handle);
-        return 1;
-    }
-
-    if (pcap_setfilter(handle, &fp) == -1) {
-        std::cerr << "Error setting filter: " << pcap_geterr(handle) << std::endl;
-        pcap_freecode(&fp);
-        pcap_close(handle);
-        return 1;
-    }
-
-    pcap_freecode(&fp);
-
-    QdiscController controller(interface,
-                              slotNumber,
-                              std::chrono::microseconds(slotDuration),
-                              if_index,
-                              verbose,
-                              [handle](){ pcap_breakloop(handle);},
-                              run,
-                              pollCount);
-
-    pcap_loop(handle, 0, controller.packet_handler, reinterpret_cast<u_char*>(&controller));
-    pcap_close(handle);
 
     return 0;
 }
