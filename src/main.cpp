@@ -8,22 +8,22 @@
 #include "beacon.h"
 #include "qdisc.h"
 
-using std::chrono::operator""s;
-
+using std::chrono::operator""us;
 
 static const char USAGE[] =
 R"(Cooperative TDMA scheduler
 
 Usage:
-  tc-tdma <INTERFACE> <SLOT> [--duration=DURATION_US] [--count=COUNT] [--buffer-size=SIZE] [--verbose]
+  tc-tdma <INTERFACE> <SLOT> [options]
 
 Options:
-  <INTERFACE>              name of interface to attach to (e.g. wlan0)
-  <SLOT>                   ordinal index of TDMA slot
-  --duration=DURATION_US   slot duration in microseconds (when ommitted, this is inferred from beacon TU length) [default: 200]
-  --buffer-size=SIZE       number of packets to buffer during plug period [default: 10240]
-  --count=COUNT            if specified, only run for specified number of beacon broadcasts
-  --verbose                show beacons
+  <INTERFACE>                name of interface to attach to (e.g. wlan0)
+  <SLOT>                     ordinal 0-based index of TDMA slot
+  --slots-per-frame=SLOTS    number of slots per TDMA frame [default: 10]
+  --frame-TUs=TUs            Time Units for each TDMA frame [default: 10]
+  --buffer-size=SIZE         number of packets to buffer during plug period [default: 10240]
+  --count=COUNT              if specified, only run for specified number of TDMA frames
+  --verbose                  show beacons and various things
 
 This program effectively does these 4 actions:
 
@@ -44,21 +44,26 @@ int main(int argc, const char* argv[])
 {
     auto args = docopt::docopt(USAGE, {argv + 1, argv + argc});
 
+    for ( auto [a,b] : args)
+        std::cout << a << " : " << b << std::endl;
+
     std::string interface = args["<INTERFACE>"].asString();
     size_t slotNumber = args["<SLOT>"].asLong();
-    size_t slotDuration = args["--duration"].asLong();
-    bool verbose = args["--verbose"].asBool();
+    size_t slotsPerFrame = args["--slots-per-frame"].asLong();
+    size_t frameTUs = args["--frame-TUs"].asLong();
+    auto frameDuration = std::chrono::microseconds(frameTUs * 1024);
+
     std::optional<size_t> pollCount = args["--count"] ? std::optional<size_t>(args["--count"].asLong()) : std::nullopt;
 
-    try {
-        QdiscController plug(interface, verbose); // qdisc plug controller
+    bool verbose = args["--verbose"].asBool();
 
-        // we purposefully set the frame start to 5 seconds in the future because the default state of the TDMA scheduler
-        // upon construction is to simply let traffic pass through - and thus behave like a vanilla wifi client.
-        static TDMAScheduler scheduler(TDMAScheduler::timestamp::clock::now() + 5s,
-                                       std::chrono::microseconds(100 * 1024), // assume default epoch duration of 100TUs
-                                       slotNumber,
-                                       std::chrono::microseconds(slotDuration),
+    try
+    {
+        QdiscController plug(interface, args["--buffer-size"].asLong(), verbose); // qdisc plug controller
+
+        static TDMAScheduler scheduler(slotNumber,
+                                       slotsPerFrame,
+                                       frameDuration,
                                        [&](){ plug.tx_pause(); },
                                        [&](){ plug.tx_resume(); },
                                        pollCount,
