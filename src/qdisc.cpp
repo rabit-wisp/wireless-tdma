@@ -164,6 +164,7 @@ void QdiscController::packet_handler(uint8_t* user, const struct pcap_pkthdr* pk
             previous_diff = this_diff;
         }
 
+        // the beacon receipt should only serve as a timing aide for the TDMA algorithm.
         // TODO: adapt this to TU length
         for (int i = 0; i < 20 ; i++ )
         {
