@@ -8,8 +8,7 @@
 #include "beacon.h"
 #include "qdisc.h"
 
-using std::chrono::operator""ms;
-using std::chrono::operator""us;
+using std::chrono::operator""s;
 
 
 static const char USAGE[] =
@@ -54,7 +53,9 @@ int main(int argc, const char* argv[])
     try {
         QdiscController plug(interface, verbose); // qdisc plug controller
 
-        static TDMAScheduler scheduler(TDMAScheduler::timestamp::clock::now() + 1000ms,
+        // we purposefully set the frame start to 5 seconds in the future because the default state of the TDMA scheduler
+        // upon construction is to simply let traffic pass through - and thus behave like a vanilla wifi client.
+        static TDMAScheduler scheduler(TDMAScheduler::timestamp::clock::now() + 5s,
                                        std::chrono::microseconds(100 * 1024), // assume default epoch duration of 100TUs
                                        slotNumber,
                                        std::chrono::microseconds(slotDuration),
