@@ -3,15 +3,15 @@
 #include "tdma.h"
 
 
-TDMAScheduler::TDMAScheduler(TDMAScheduler::timestamp beacon,
-                             std::chrono::microseconds epoch_duration,
+TDMAScheduler::TDMAScheduler(TDMAScheduler::timestamp frame_start,
+                             std::chrono::microseconds frame_duration,
                              size_t slotPosition,
                              std::chrono::microseconds slotDuration,
                              std::function<void()> pause,
                              std::function<void()> resume,
                              std::optional<size_t> count,
-                             bool verbose) : current_epoch(beacon),
-                                             epoch_duration(epoch_duration),
+                             bool verbose) : current_frame(frame_start),
+                                             frame_duration(frame_duration),
                                              slot_position(slotPosition),
                                              slot_duration(slotDuration),
                                              pause_transmissions(pause),
@@ -19,7 +19,7 @@ TDMAScheduler::TDMAScheduler(TDMAScheduler::timestamp beacon,
                                              count(count),
                                              verbose(verbose)
 {
-    next_epoch = current_epoch.load() + epoch_duration;
+    next_frame = current_frame.load() + frame_duration;
 }
 
 void TDMAScheduler::terminate() { stop = true; }
@@ -30,9 +30,9 @@ void TDMAScheduler::resynchronize(TDMAScheduler::timestamp beacon, std::chrono::
     //std::lock_guard<std::mutex> guard(mutex);
     std::cout << "resynchronizing tdma scheduler - new beacon start @"
               << beacon.time_since_epoch().count() << " duration: " << duration << std::endl;
-    next_epoch = beacon + duration;
-    current_epoch = beacon;
-    epoch_duration = duration;
+    next_frame = beacon + duration;
+    current_frame = beacon;
+    frame_duration = duration;
 }
 
 void TDMAScheduler::run()
@@ -45,15 +45,15 @@ void TDMAScheduler::run()
         if (verbose) std::cout << "plugging qdisc   @" << TDMAScheduler::timestamp::clock::now().time_since_epoch().count() << std::endl;
         pause_transmissions();
 
-        std::this_thread::sleep_until(current_epoch.load() + (slot_duration * slot_position));
+        std::this_thread::sleep_until(current_frame.load() + (slot_duration * slot_position));
 
         if (verbose) std::cout << "unplugging qdisc @" << TDMAScheduler::timestamp::clock::now().time_since_epoch().count() << std::endl;
 
         resume_transmissions();
 
         std::this_thread::sleep_for(slot_duration);
-        //std::this_thread::sleep_until(current_epoch.load() + (slot_duration * (slot_position + 1)));
+        //std::this_thread::sleep_until(current_frame.load() + (slot_duration * (slot_position + 1)));
 
-        //epoch = epoch.load() + epoch_duration.load();
+        //frame = frame.load() + frame_duration.load();
     }
 }

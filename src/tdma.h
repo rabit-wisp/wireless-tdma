@@ -17,9 +17,9 @@ struct TDMAScheduler {
 
     using timestamp = std::chrono::time_point<std::chrono::system_clock>;
 
-    std::atomic<timestamp> current_epoch;
-    std::atomic<timestamp> next_epoch;
-    std::atomic<std::chrono::nanoseconds> epoch_duration;
+    std::atomic<timestamp> current_frame;
+    std::atomic<timestamp> next_frame;
+    std::atomic<std::chrono::nanoseconds> frame_duration;
     std::atomic<size_t> TUs; // beacon TUs
 
     std::optional<size_t> count;
@@ -31,13 +31,13 @@ struct TDMAScheduler {
 
     std::chrono::microseconds slot_duration; // slot duration
     size_t slot_position;                    // our slot position
-    size_t epoch_slots;                      // number of slots per epoch
+    size_t slots_per_frame;                      // number of slots per frame
 
     std::function<void()> pause_transmissions;
     std::function<void()> resume_transmissions;
 
-    TDMAScheduler(timestamp beacon,
-                  std::chrono::microseconds epoch_duration,
+    TDMAScheduler(timestamp frame_start,
+                  std::chrono::microseconds frame_duration,
                   size_t slotPosition,
                   std::chrono::microseconds slotDuration,
                   std::function<void()> pause_transmissions,
