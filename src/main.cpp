@@ -79,7 +79,7 @@ int main(int argc, const char* argv[])
         std::signal(SIGINT, signal_handler);
         std::signal(SIGTERM, signal_handler);
 
-        beacon.listen(); // start listening on beacon broadcasts
+        beacon.listen(); // start listener thread to monitor beacon broadcasts
         scheduler.run(); // run the TDMA scheduler
 
     } catch ( std::exception& e ) {
