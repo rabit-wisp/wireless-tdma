@@ -1,9 +1,9 @@
 #include <thread>
 
-#include "tdma.h"
+#include "qdisc.h"
 #include "ieee80211.h"
 
-TDMAController::TDMAController(const std::string& iface,
+QdiscController::QdiscController(const std::string& iface,
                                int slot,
                                std::chrono::microseconds duration,
                                int ifindex,
@@ -63,7 +63,7 @@ TDMAController::TDMAController(const std::string& iface,
     std::cout << "TDMA controller initialized for " << interface << std::endl;
 }
 
-TDMAController::~TDMAController()
+QdiscController::~QdiscController()
 {
     std::cerr << "Removing qdisc from interface " << interface << std::endl;
     int err = rtnl_qdisc_delete(socket, qdisc);
@@ -78,7 +78,7 @@ TDMAController::~TDMAController()
     }
 }
 
-void TDMAController::tx_resume()
+void QdiscController::tx_resume()
 {
     if (!socket) return;
     if (tx_enabled) return;
@@ -95,7 +95,7 @@ void TDMAController::tx_resume()
 }
 
 // tc qdisc change dev wlan0 root plug block
-void TDMAController::tx_pause()
+void QdiscController::tx_pause()
 {
     if (!socket) return;
     if (!tx_enabled) return;
@@ -112,9 +112,9 @@ void TDMAController::tx_pause()
 }
 
     // Packet handler callback
-void TDMAController::packet_handler(uint8_t* user, const struct pcap_pkthdr* pkthdr, const uint8_t* packet)
+void QdiscController::packet_handler(uint8_t* user, const struct pcap_pkthdr* pkthdr, const uint8_t* packet)
 {
-    TDMAController* controller = reinterpret_cast<TDMAController*>(user);
+    QdiscController* controller = reinterpret_cast<QdiscController*>(user);
 
     if ((controller->count && *controller->count == 0) || !controller->run)
         controller->terminate();

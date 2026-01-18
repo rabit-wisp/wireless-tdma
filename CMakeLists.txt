@@ -26,7 +26,7 @@ pkg_check_modules(ZMQ REQUIRED libzmq)
 pkg_check_modules(PCAP REQUIRED libpcap)
 pkg_check_modules(LIBNL REQUIRED libnl-3.0 libnl-genl-3.0 libnl-route-3.0)
 
-add_executable(tc-tdma src/main.cpp src/tdma.cpp)
+add_executable(tc-tdma src/main.cpp src/qdisc.cpp)
 target_include_directories(tc-tdma PRIVATE ${docopt_SOURCE_DIR}
                                            ${LIBNL_INCLUDE_DIRS}
                                            ${PCAP_INCLUDE_DIRS})

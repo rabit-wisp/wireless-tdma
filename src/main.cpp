@@ -8,7 +8,7 @@
 #include "docopt.h"
 
 
-#include "tdma.h"
+#include "qdisc.h"
 
 std::atomic<bool> run{true};
 
@@ -155,7 +155,7 @@ int main(int argc, const char* argv[])
 
     pcap_freecode(&fp);
 
-    TDMAController controller(interface,
+    QdiscController controller(interface,
                               slotNumber,
                               std::chrono::microseconds(slotDuration),
                               if_index,
