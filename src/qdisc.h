@@ -23,7 +23,7 @@ struct QdiscController
     std::mutex mutex;
     struct rtnl_qdisc *qdisc;
 
-    QdiscController(const std::string &iface, bool verbose);
+    QdiscController(const std::string &iface, size_t bufferSize, bool verbose);
     ~QdiscController();
 
     void tx_resume();

@@ -10,7 +10,7 @@
 
 struct Beacon {
 
-    using sync_function = std::function<void(std::chrono::time_point<std::chrono::system_clock>,std::chrono::microseconds)>;
+    using sync_function = std::function<void(std::chrono::time_point<std::chrono::system_clock>,size_t)>;
     pcap_t *handle;
     sync_function& sync;
 

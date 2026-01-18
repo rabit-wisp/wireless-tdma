@@ -4,9 +4,11 @@
 
 #include "qdisc.h"
 
-QdiscController::QdiscController(const std::string& iface, bool verbose_) : interface(iface),
-                                                                            verbose(verbose_),
-                                                                            tx_enabled(true)
+QdiscController::QdiscController(const std::string& iface,
+                                 size_t bufferSize,
+                                 bool verbose_) : interface(iface),
+                                                  verbose(verbose_),
+                                                  tx_enabled(true)
 {
     if_index = if_nametoindex(interface.c_str());
     if (if_index == 0) {
@@ -43,7 +45,7 @@ QdiscController::QdiscController(const std::string& iface, bool verbose_) : inte
 
     rtnl_tc_set_ifindex(TC_CAST(qdisc), if_index);
     rtnl_tc_set_parent(TC_CAST(qdisc), TC_H_ROOT);
-    rtnl_qdisc_plug_set_limit(qdisc, 10240);
+    rtnl_qdisc_plug_set_limit(qdisc, bufferSize);
     rtnl_qdisc_plug_release_indefinite(qdisc); // start the qdisc in released mode
 
 

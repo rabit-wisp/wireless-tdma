@@ -132,7 +132,7 @@ void Beacon::packet_handler(uint8_t* user, const struct pcap_pkthdr* pkthdr, con
 
         uint16_t beacon_interval_tu = beacon->beacon_interval;
         auto beacon_interval = std::chrono::microseconds(beacon_interval_tu * 1024);
-        
+
         if (this_->verbose)
         {
             static int64_t previous_diff = reception_time_us - tsf_time_us;
@@ -156,6 +156,6 @@ void Beacon::packet_handler(uint8_t* user, const struct pcap_pkthdr* pkthdr, con
             previous_diff = this_diff;
         }
 
-        this_->sync(std::chrono::system_clock::time_point(seconds + useconds), beacon_interval);
+        this_->sync(std::chrono::system_clock::time_point(seconds + useconds), beacon->beacon_interval);
     }
 };
