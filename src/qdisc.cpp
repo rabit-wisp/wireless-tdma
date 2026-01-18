@@ -1,3 +1,4 @@
+#include <mutex>
 #include <thread>
 
 #include "qdisc.h"
@@ -80,6 +81,7 @@ QdiscController::~QdiscController()
 
 void QdiscController::tx_resume()
 {
+    std::lock_guard<std::mutex> guard(mutex);
     if (!socket) return;
     if (tx_enabled) return;
 
@@ -87,7 +89,8 @@ void QdiscController::tx_resume()
     int err = rtnl_qdisc_update(socket, qdisc, qdisc, NLM_F_REPLACE);
 
     if (err < 0) {
-        std::cerr << "Failed to enable TX: " << nl_geterror(err) << " (" << err << ")" << std::endl;
+        std::cerr << "Failed to enable TX: " << nl_geterror(err) << " (" << err
+                  << ")" << std::endl;
     } else {
         tx_enabled = true;
         //std::cout << "[SLOT " << slot_number << "] TX ENABLED (released)" << std::endl;
@@ -97,6 +100,7 @@ void QdiscController::tx_resume()
 // tc qdisc change dev wlan0 root plug block
 void QdiscController::tx_pause()
 {
+    std::lock_guard<std::mutex> guard(mutex);
     if (!socket) return;
     if (!tx_enabled) return;
 
@@ -104,7 +108,8 @@ void QdiscController::tx_pause()
     int err = rtnl_qdisc_update(socket, qdisc, qdisc, NLM_F_REPLACE);
 
     if (err < 0) {
-        std::cerr << "Failed to pause TX: " << nl_geterror(err) << " (" << err << ")" << std::endl;
+        std::cerr << "Failed to pause TX: " << nl_geterror(err) << " (" << err
+                  << ")" << std::endl;
     } else {
         tx_enabled = false;
         //std::cout << "[SLOT " << slot_number << "] TX PAUSED (buffered)" << std::endl;

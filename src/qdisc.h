@@ -2,15 +2,16 @@
 #ifndef _QDISC_H_
 #define _QDISC_H_
 
-#include <functional>
 #include <atomic>
-#include <iostream>
+#include <functional>
 #include <iomanip>
-#include <string>
-#include <unistd.h>
-#include <pcap.h>
+#include <iostream>
+#include <mutex>
 #include <net/if.h>
 #include <netlink/route/qdisc/plug.h>
+#include <pcap.h>
+#include <string>
+#include <unistd.h>
 
 #include "ieee80211.h"
 
@@ -24,6 +25,8 @@ struct QdiscController
     int if_index;
     bool verbose;
     bool tx_enabled;
+
+    std::mutex mutex;
     struct rtnl_qdisc *qdisc;
 
     std::function<void()> terminate;

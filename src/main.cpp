@@ -4,7 +4,6 @@
 #include <csignal>
 #include <atomic>
 #include <net/if.h>
-
 #include "docopt.h"
 
 
