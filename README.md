@@ -1,3 +1,5 @@
+# **PRELIMINARY DRAFT**
+
 # Cooperative Wifi 5 TDMA protocol
 
 This is a lightweight quick and dirty cooperative TDMA protocol implementation using linux qdisc/plug scheduler.
