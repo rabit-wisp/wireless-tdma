@@ -1,11 +1,17 @@
 #include "beacon.h"
 #include <exception>
+#include <algorithm>
 #include <pcap.h>
+#include <limits>
 #include "ieee80211.h"
 
-Beacon::Beacon(std::string interface, Beacon::sync_function&& func, bool verbose) : interface(interface),
-                                                                                     sync(func),
-                                                                                     verbose(verbose)
+using std::chrono::operator""us;
+
+Beacon::Beacon(std::string interface,
+               Beacon::sync_function&& func,
+               bool verbose) : interface(interface),
+                               sync(func),
+                               verbose(verbose)
 {
     char errbuf[PCAP_ERRBUF_SIZE];
 
@@ -87,6 +93,7 @@ Beacon::Beacon(std::string interface, Beacon::sync_function&& func, bool verbose
     }
 
     pcap_freecode(&fp);
+    clock_offset_buffer.resize(50, std::chrono::microseconds(std::numeric_limits<long long>::max())); // look back 50 beacon broadcasts
 }
 
 Beacon::~Beacon()
@@ -104,7 +111,6 @@ void Beacon::listen()
 void Beacon::begin_worker(Beacon* this_)
 {
     std::cout << "Starting WiFi beacon detection on interface: " << this_->interface << std::endl;
-    //std::cout << "Note: Interface must be in monitor mode!" << std::endl;
     std::cout << std::string(80, '=') << std::endl;
     std::cout << "Capturing beacon frames... (Press Ctrl+C to stop)" << std::endl;
     std::cout << std::string(80, '-') << std::endl;
@@ -112,10 +118,65 @@ void Beacon::begin_worker(Beacon* this_)
     pcap_loop(this_->handle, 0, Beacon::packet_handler, reinterpret_cast<u_char*>(this_));
 }
 
-void Beacon::packet_handler(uint8_t* user, const struct pcap_pkthdr* pkthdr, const uint8_t* packet)
+//void Beacon::show_beacon(const struct pcap_pkthdr* pkthdr, const uint8_t* packet)
+void Beacon::show_beacon(const uint8_t bssid[6], uint64_t rx, uint64_t tsf)
 {
-    Beacon* this_ = reinterpret_cast<Beacon*>(user);
+    static int64_t previous_diff = rx - tsf;
+    int64_t this_diff = rx - tsf;
 
+    std::cout << "BSSID: " << std::hex << std::setw(2) << std::setfill('0')
+              << static_cast<int>(bssid[0]) << ":"
+              << static_cast<int>(bssid[1]) << ":"
+              << static_cast<int>(bssid[2]) << ":"
+              << static_cast<int>(bssid[3]) << ":"
+              << static_cast<int>(bssid[4]) << ":"
+              << static_cast<int>(bssid[5])
+              << std::dec
+        //<< " | local clock: " << std::setfill(' ') << std::setw(16) << std::chrono::steady_clock::now().time_since_epoch().count() / 1000 << " µs"
+              << " | local clock: " << std::setw(16)  << std::setfill(' ') << rx << " µs"
+              << " | remote tsf: " << std::setw(16) << tsf << " µs"
+              << " | offset: " << std::setw(16) << tsf_to_steady_clock_offset.value_or(0us).count() << " µs"
+              << " | drift: " << std::setw(4)<<  (previous_diff - this_diff) << " µs"
+              << std::endl;
+    std::cout.flush();
+
+    previous_diff = this_diff;
+}
+
+void Beacon::update_clock_offset(std::chrono::microseconds tsf_epoch,
+                                 std::chrono::steady_clock::time_point steady_timestamp)
+{
+    /*
+     * @tsf_epoch is maintained by the remote AP hardware - presumptively, it is hardware driven
+     * @steady_timestamp corresponds to our local steady_clock representation and while it may be steady
+     * it is subject to jitter (reception and cpu).
+     *
+     * We maintain a lowest bound of the offset between the two: while the steady_timestamp snapshot
+     * may be obtained late, it will never be obtained earlier than the remote snapshot (which we assume to beacon
+     * ground truth). Therefore, we simply return the running minimum of the offset (but not for an infinite time
+     * horizon since the remote clock may very well drift in either direction).
+     */
+
+    auto diff = std::chrono::duration_cast<std::chrono::microseconds>(steady_timestamp.time_since_epoch()) - tsf_epoch;
+
+    if (!tsf_to_steady_clock_offset) // first time initialization
+    {
+        std::fill(clock_offset_buffer.begin(), clock_offset_buffer.end(), diff);
+        tsf_to_steady_clock_offset = diff;
+    }
+
+    // left shift clock_offset_buffer
+    std::copy(clock_offset_buffer.begin() + 1, clock_offset_buffer.end(), clock_offset_buffer.begin());
+    clock_offset_buffer.back() = diff;
+
+    //for( auto i : clock_offset_buffer) std::cout << i << " ";
+    //std::cout << std::endl;
+
+    tsf_to_steady_clock_offset = *std::min_element(clock_offset_buffer.begin(),clock_offset_buffer.end());
+}
+
+void Beacon::packet_handler_impl(std::chrono::steady_clock::time_point rx, const struct pcap_pkthdr* pkthdr, const uint8_t* packet)
+{
     const radiotap_header* rtap = reinterpret_cast<const radiotap_header*>(packet);
     int rtap_len = rtap->it_len;
 
@@ -130,32 +191,25 @@ void Beacon::packet_handler(uint8_t* user, const struct pcap_pkthdr* pkthdr, con
         auto useconds = std::chrono::microseconds(pkthdr->ts.tv_usec);
         uint64_t tsf_time_us = beacon->timestamp;
 
+        update_clock_offset(std::chrono::microseconds(beacon->timestamp), rx);
+
         uint16_t beacon_interval_tu = beacon->beacon_interval;
         auto beacon_interval = std::chrono::microseconds(beacon_interval_tu * 1024);
 
-        if (this_->verbose)
-        {
-            static int64_t previous_diff = reception_time_us - tsf_time_us;
-            int64_t this_diff = reception_time_us - tsf_time_us;
+        if (verbose)
+            show_beacon(mgmt->bssid, rx.time_since_epoch().count() / 1000, tsf_time_us);
 
-            std::cout << "BSSID: " << std::hex << std::setw(2) << std::setfill('0')
-                      << static_cast<int>(mgmt->bssid[0]) << ":"
-                      << static_cast<int>(mgmt->bssid[1]) << ":"
-                      << static_cast<int>(mgmt->bssid[2]) << ":"
-                      << static_cast<int>(mgmt->bssid[3]) << ":"
-                      << static_cast<int>(mgmt->bssid[4]) << ":"
-                      << static_cast<int>(mgmt->bssid[5])
-                      << std::dec
-                      << " | time: " << std::setw(16) << std::chrono::steady_clock::now().time_since_epoch().count() / 1000 << " µs"
-                      << " | rx: " << std::setw(16) << reception_time_us << " µs"
-                      << " | tsf: " << std::setw(16) << tsf_time_us << " µs"
-                      << " | drift: " << (previous_diff - this_diff) << " µs"
-                      << std::endl;
-            std::cout.flush();
 
-            previous_diff = this_diff;
-        }
-
-        this_->sync(std::chrono::system_clock::time_point(seconds + useconds), beacon->beacon_interval);
+        // don't synchronize if we don't yet know the offset between remote and local
+        // (i.e. remote is simply a meaningless number)
+        if (tsf_to_steady_clock_offset)
+            sync(std::chrono::steady_clock::time_point{} + (std::chrono::microseconds(tsf_time_us) + tsf_to_steady_clock_offset.value()),
+                 beacon->beacon_interval);
     }
+};
+
+void Beacon::packet_handler(uint8_t* user, const struct pcap_pkthdr* pkthdr, const uint8_t* packet)
+{
+    const auto now = std::chrono::steady_clock::now();
+    reinterpret_cast<Beacon*>(user)->packet_handler_impl(now, pkthdr, packet);
 };
