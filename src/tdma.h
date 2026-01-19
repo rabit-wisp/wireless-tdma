@@ -15,7 +15,7 @@ struct TDMAScheduler {
    * schedules
    */
 
-    using timestamp = std::chrono::time_point<std::chrono::system_clock>;
+    using timestamp = std::chrono::time_point<std::chrono::steady_clock>;
 
     std::atomic<timestamp> frame_start;
     std::chrono::microseconds frame_duration;
@@ -42,6 +42,7 @@ struct TDMAScheduler {
 
     TDMAScheduler(size_t slotPosition,
                   size_t slotCount,
+                  timestamp frame_start,
                   std::chrono::microseconds frame_duration,
                   std::function<void()> pause_transmissions,
                   std::function<void()> resume_transmissions,
