@@ -2,6 +2,8 @@
 #include <chrono>
 #include <csignal>
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
 
 #include "docopt.h"
 #include "tdma.h"
@@ -44,8 +46,6 @@ int main(int argc, const char* argv[])
 {
     auto args = docopt::docopt(USAGE, {argv + 1, argv + argc});
 
-    for ( auto [a,b] : args)
-        std::cout << a << " : " << b << std::endl;
 
     std::string interface = args["<INTERFACE>"].asString();
     size_t slotNumber = args["<SLOT>"].asLong();
@@ -61,18 +61,45 @@ int main(int argc, const char* argv[])
     {
         QdiscController plug(interface, args["--buffer-size"].asLong(), verbose); // qdisc plug controller
 
+        std::condition_variable first_beacon;
+        std::mutex mutex;
+        std::optional<TDMAScheduler::timestamp> firstFrame;
+
+        // 80211 BSS beacon broadcast listener
+        Beacon beacon(interface,
+                      [&](auto ts, auto... args){
+                          std::unique_lock<std::mutex> lock(mutex);
+                          firstFrame = ts;
+                          first_beacon.notify_one();
+                      },
+                      true); // be verbose for first beacon
+
+        beacon.listen();
+
+        std::cout << "Waiting for first BSS beacon to arrive..." << std::endl;
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            if (timeout)
+                first_beacon.wait_for(lock, timeout.value(), [&]{ return !!firstFrame; });
+            else
+                first_beacon.wait(lock, [&]{ return !!firstFrame; });
+
+            //beacon.update_clock_offset(std::chrono::microseconds tsf_epoch,
+            //std::chrono::steady_clock::time_point steady_timestamp)
+
+            beacon.verbose = verbose; // after first beacon has been received, assume global verbosity level
+        }
+
         static TDMAScheduler scheduler(slotNumber,
                                        slotsPerFrame,
+                                       firstFrame.value_or(TDMAScheduler::timestamp::clock::now()),
                                        frameDuration,
                                        [&](){ plug.tx_pause(); },
                                        [&](){ plug.tx_resume(); },
                                        pollCount,
                                        verbose);
 
-        // 80211 BSS beacon broadcast listener
-        Beacon beacon(interface,
-                      [&](auto... args){ scheduler.resynchronize(args...); },
-                      verbose);
+        beacon.sync = [&](auto... args){ scheduler.resynchronize(args...); };
 
         // add a signal handler so that we correctly destroy all resources since they have OS level RAII
         auto signal_handler = [](int signal) {
@@ -85,8 +112,7 @@ int main(int argc, const char* argv[])
         std::signal(SIGINT, signal_handler);
         std::signal(SIGTERM, signal_handler);
 
-        beacon.listen(); // start listener thread to monitor beacon broadcasts
-        scheduler.run(); // run the TDMA scheduler
+        scheduler.run();
 
     } catch ( std::exception& e ) {
 
