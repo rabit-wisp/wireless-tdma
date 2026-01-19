@@ -1,56 +1,51 @@
 #include <mutex>
 #include <thread>
+#include <net/if.h>
 
 #include "qdisc.h"
-#include "ieee80211.h"
 
 QdiscController::QdiscController(const std::string& iface,
-                               int slot,
-                               std::chrono::microseconds duration,
-                               int ifindex,
-                               bool verbose_,
-                               std::function<void()> terminate_,
-                               std::atomic<bool>& run_,
-                               std::optional<size_t> count_) : interface(iface),
-                                                               slot_number(slot),
-                                                               slot_duration(duration),
-                                                               verbose(verbose_),
-                                                               run(run_),
-                                                               count(count_),
-                                                               terminate(terminate_),
-                                                               if_index(ifindex),
-                                                               tx_enabled(true)
+                                 size_t bufferSize,
+                                 bool verbose_) : interface(iface),
+                                                  verbose(verbose_),
+                                                  tx_enabled(true)
 {
+    if_index = if_nametoindex(interface.c_str());
+    if (if_index == 0) {
+        std::cerr << "Interface " << interface << " not found" << std::endl;
+        throw std::exception();
+    }
+
     socket = nl_socket_alloc();
     if (!socket) {
         std::cerr << "Failed to allocate netlink socket" << std::endl;
-        return;
+        throw std::exception();
     }
 
     if (nl_connect(socket, NETLINK_ROUTE) < 0) {
         std::cerr << "Failed to connect to netlink route" << std::endl;
         nl_socket_free(socket);
         socket = nullptr;
-        return;
+        throw std::exception();
     }
 
     qdisc = rtnl_qdisc_alloc();
     if (!qdisc) {
         std::cerr << "Failed to allocated qdisc" << std::endl;
-        return;
+        throw std::exception();
     }
 
     int kind_err = rtnl_tc_set_kind(TC_CAST(qdisc), "plug");
     if (kind_err < 0) {
         std::cerr << "Failed to allocated plug type qdisc: " << nl_geterror(kind_err) << std::endl;
         rtnl_qdisc_put(qdisc);
-        return;
+        throw std::exception();
     }
 
 
     rtnl_tc_set_ifindex(TC_CAST(qdisc), if_index);
     rtnl_tc_set_parent(TC_CAST(qdisc), TC_H_ROOT);
-    rtnl_qdisc_plug_set_limit(qdisc, 10240);
+    rtnl_qdisc_plug_set_limit(qdisc, bufferSize);
     rtnl_qdisc_plug_release_indefinite(qdisc); // start the qdisc in released mode
 
 
@@ -58,7 +53,7 @@ QdiscController::QdiscController(const std::string& iface,
     if (err < 0) {
         std::cerr << "Failed to add qdisc: " << nl_geterror(err) << std::endl;
         rtnl_qdisc_put(qdisc);
-        return;
+        throw std::exception();
     }
 
     std::cout << "TDMA controller initialized for " << interface << std::endl;
@@ -82,8 +77,8 @@ QdiscController::~QdiscController()
 void QdiscController::tx_resume()
 {
     std::lock_guard<std::mutex> guard(mutex);
-    if (!socket) return;
-    if (tx_enabled) return;
+    if (!socket) throw std::exception();
+    if (tx_enabled) throw std::exception();
 
     rtnl_qdisc_plug_release_indefinite(qdisc);
     int err = rtnl_qdisc_update(socket, qdisc, qdisc, NLM_F_REPLACE);
@@ -101,8 +96,8 @@ void QdiscController::tx_resume()
 void QdiscController::tx_pause()
 {
     std::lock_guard<std::mutex> guard(mutex);
-    if (!socket) return;
-    if (!tx_enabled) return;
+    if (!socket) throw std::exception();
+    if (!tx_enabled) throw std::exception();
 
     rtnl_qdisc_plug_buffer(qdisc);
     int err = rtnl_qdisc_update(socket, qdisc, qdisc, NLM_F_REPLACE);
@@ -115,67 +110,3 @@ void QdiscController::tx_pause()
         //std::cout << "[SLOT " << slot_number << "] TX PAUSED (buffered)" << std::endl;
     }
 }
-
-    // Packet handler callback
-void QdiscController::packet_handler(uint8_t* user, const struct pcap_pkthdr* pkthdr, const uint8_t* packet)
-{
-    QdiscController* controller = reinterpret_cast<QdiscController*>(user);
-
-    if ((controller->count && *controller->count == 0) || !controller->run)
-        controller->terminate();
-
-    (*controller->count)-=1;
-
-
-    const radiotap_header* rtap = reinterpret_cast<const radiotap_header*>(packet);
-    int rtap_len = rtap->it_len;
-
-    // Parse 802.11 header (after radiotap)
-    const ieee80211_mgmt_header* mgmt = reinterpret_cast<const ieee80211_mgmt_header*>(packet + rtap_len);
-    // Check if this is a beacon frame (type=0, subtype=8)
-    if (mgmt->fc.type == 0 && mgmt->fc.subtype == 8)
-    {
-        const beacon_fixed_params* beacon = reinterpret_cast<const beacon_fixed_params*>(packet + rtap_len + sizeof(ieee80211_mgmt_header));
-        uint64_t reception_time_us = (uint64_t)pkthdr->ts.tv_sec * 1000000ULL + (uint64_t)pkthdr->ts.tv_usec;
-        uint64_t tsf_time_us = beacon->timestamp;
-
-        if (controller->verbose)
-        {
-            static int64_t previous_diff = reception_time_us - tsf_time_us;
-            int64_t this_diff = reception_time_us - tsf_time_us;
-
-            uint16_t beacon_interval_tu = beacon->beacon_interval;
-            auto beacon_interval = std::chrono::microseconds(beacon_interval_tu * 1024);
-
-            std::cout << "BSSID: " << std::hex << std::setw(2) << std::setfill('0')
-                      << static_cast<int>(mgmt->bssid[0]) << ":"
-                      << static_cast<int>(mgmt->bssid[1]) << ":"
-                      << static_cast<int>(mgmt->bssid[2]) << ":"
-                      << static_cast<int>(mgmt->bssid[3]) << ":"
-                      << static_cast<int>(mgmt->bssid[4]) << ":"
-                      << static_cast<int>(mgmt->bssid[5])
-                      << std::dec
-                      << " | rx: " << std::setw(16) << reception_time_us << " µs"
-                      << " | tsf: " << std::setw(16) << tsf_time_us << " µs"
-                      << " | drift: " << (previous_diff - this_diff) << " µs"
-                      << std::endl;
-            std::cout.flush();
-
-            previous_diff = this_diff;
-        }
-
-        // TODO: adapt this to TU length
-        for (int i = 0; i < 20 ; i++ )
-        {
-            controller->tx_pause();
-            //std::this_thread::sleep_until(now + (controller->slot_duration * controller->slot_number));
-            std::this_thread::sleep_for((controller->slot_duration * controller->slot_number));
-
-            controller->tx_resume();
-
-            std::this_thread::sleep_for(controller->slot_duration);
-
-            controller->tx_pause();
-        }
-    }
-};
