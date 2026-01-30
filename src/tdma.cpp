@@ -69,20 +69,38 @@ void TDMAScheduler::resynchronize(TDMAScheduler::timestamp beacon, size_t TUs)
 void TDMAScheduler::run()
 {
     using namespace std::chrono;
+    const auto downtime = slot_duration * slot_position;
+
+    pause_transmissions();
 
     while(!stop && (!count || count.value() > 0))
     {
         !!count && --*count;
 
-        pause_transmissions();
+        const time_point this_frame_start = frame_start.load() + downtime;
+        std::this_thread::sleep_until(this_frame_start - jitter);
 
-        std::this_thread::sleep_until(frame_start.load() + (slot_duration * slot_position));
 
+        const auto slotStart = timestamp::clock::now();
 
         resume_transmissions();
 
-        std::this_thread::sleep_for(slot_duration);
-        //std::this_thread::sleep_until(current_frame.load() + (slot_duration * (slot_position + 1)));
+        std::this_thread::sleep_for(slot_duration - jitter);
+
+        const auto slotEnd = timestamp::clock::now();
+
+        pause_transmissions();
+
+        if (verbose)
+        {
+            const auto a = duration_cast<microseconds>(slotStart - frame_start.load()).count();
+            const auto b = duration_cast<microseconds>(slotEnd - frame_start.load()).count();
+            std::cout << "qdisc PLUG: @"
+                      << (double)frame_start.load().time_since_epoch().count() / 1e9
+                      << " s   | " << std::setw(8) << std::setfill(' ') << a
+                      << "  --> " << std::setw(8) << std::setfill(' ') << b << " µs"
+                      << "   | total duration: " << std::setw(8) << std::setfill(' ') << b - a  << "µs" << std::endl;
+        }
 
         frame_start = frame_start.load() + frame_duration;
     }
