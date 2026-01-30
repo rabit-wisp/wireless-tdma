@@ -68,8 +68,7 @@ void TDMAScheduler::resynchronize(TDMAScheduler::timestamp beacon, size_t TUs)
 
 void TDMAScheduler::run()
 {
-    // we purposefully set the frame start to 5 seconds in the future because the default state of the TDMA scheduler
-    // upon construction is to simply let traffic pass through - and thus behave like a vanilla wifi client.
+    using namespace std::chrono;
 
     while(!stop && (!count || count.value() > 0))
     {
