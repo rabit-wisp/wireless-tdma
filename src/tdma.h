@@ -30,7 +30,7 @@ struct TDMAScheduler {
     // computed values
     std::chrono::microseconds slot_duration;   // slot duration
     std::chrono::microseconds jitter;          // expected system jitter
-    std::chrono::nanoseconds nop_duration;    // this is the duration it takes to execute the cpu_spinner() nop call
+    std::chrono::nanoseconds nop_duration;    // this is the duration it takes to execute the cpu_spinner(1) nop call
 
     // configured values
     size_t slot_position;                      // our slot position
