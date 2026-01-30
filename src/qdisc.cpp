@@ -77,8 +77,6 @@ QdiscController::~QdiscController()
 void QdiscController::tx_resume()
 {
     std::lock_guard<std::mutex> guard(mutex);
-    if (!socket) throw std::exception();
-    if (tx_enabled) throw std::exception();
 
     rtnl_qdisc_plug_release_indefinite(qdisc);
     int err = rtnl_qdisc_update(socket, qdisc, qdisc, NLM_F_REPLACE);
@@ -96,8 +94,6 @@ void QdiscController::tx_resume()
 void QdiscController::tx_pause()
 {
     std::lock_guard<std::mutex> guard(mutex);
-    if (!socket) throw std::exception();
-    if (!tx_enabled) throw std::exception();
 
     rtnl_qdisc_plug_buffer(qdisc);
     int err = rtnl_qdisc_update(socket, qdisc, qdisc, NLM_F_REPLACE);
