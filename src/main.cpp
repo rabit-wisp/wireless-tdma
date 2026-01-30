@@ -14,7 +14,7 @@
 using std::chrono::operator""us;
 
 static const char USAGE[] =
-    R"(Cooperative TDMA scheduler
+R"(Cooperative TDMA scheduler
 
 Usage:
   tc-tdma <INTERFACE> <SLOT> --bssid=BSSID [options]
@@ -50,6 +50,7 @@ This program effectively does these 4 actions:
 int show_beacon_stats(const std::string& interface, std::optional<std::array<uint8_t, 6>> bssid)
 {
     Beacon beacon(interface, bssid, [&](auto ts, auto... args){}, true);
+    beacon.listen();
 
     static std::condition_variable terminate;
     std::mutex mutex;
