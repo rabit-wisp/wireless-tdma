@@ -114,3 +114,91 @@ qdisc PLUG: @556,675.072589 s   |   14,661  -->   18,138 µs   | total duration:
 qdisc PLUG: @556,675.093069 s   |   14,652  -->   18,090 µs   | total duration:    3,438µs
 ```
 
+
+## measuring real-world transmission timings
+
+
+```bash
+
+sudo iw list | grep -A 10 "Supported interface modes"
+sudo iw link show
+sudo iw wlp0s20f3 set monitor control
+sudo ip link set wlp0s20f3 up
+sudo rfkill list
+sudo rfkill unblock wifi
+sudo rfkill list
+udo ip link set wlp0s20f3 up
+sudo iw wlp0s20f3 set channel 48
+sudo iw wlp0s20f3 set freq 5240 HT40-
+```
+
+in wireshark, use filter:
+
+`(wlan.fc.type_subtype == 0x08 and wlan.bssid == f4:1e:57:e8:61:90) or (((wlan.da == f4:1e:57:e8:61:90 and wlan.sa == 04:f4:1c:51:e7:19)) and (frame.len == 915))`
+
+on the tdma device, run a ping
+
+```bash
+sleep 5 && ping -c 100  -A -s 765 10.1.0.1
+```
+
+
+
+Example output (without TDMA)
+
+```
+2428	*REF*	Routerbo_e8:61:90	Broadcast	802.11	293	Beacon frame, SN=2077, FN=0, Flags=........C, BI=100, SSID="MightyRioGrande"
+2429	0.000625	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3303, FN=0, Flags=.p..R..TC
+2435	0.005897	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3303, FN=0, Flags=.p..R..TC
+2443	0.008493	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3304, FN=0, Flags=.p.....TC
+2448	0.009819	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3304, FN=0, Flags=.p..R..TC
+2452	0.011716	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3305, FN=0, Flags=.p.....TC
+2455	0.012948	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3305, FN=0, Flags=.p..R..TC
+2459	0.014948	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3306, FN=0, Flags=.p.....TC
+2462	0.016424	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3306, FN=0, Flags=.p..R..TC
+2465	0.017558	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3306, FN=0, Flags=.p..R..TC
+2469	0.019844	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3307, FN=0, Flags=.p.....TC
+2471	0.022600	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3307, FN=0, Flags=.p..R..TC
+2480	0.027926	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3307, FN=0, Flags=.p..R..TC
+2483	0.031337	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3307, FN=0, Flags=.p..R..TC
+2492	0.034049	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3308, FN=0, Flags=.p.....TC
+2502	0.037391	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3309, FN=0, Flags=.p.....TC
+2505	0.038843	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3309, FN=0, Flags=.p..R..TC
+2507	0.041397	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3309, FN=0, Flags=.p..R..TC
+2510	0.044327	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3309, FN=0, Flags=.p..R..TC
+2513	0.046124	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3309, FN=0, Flags=.p..R..TC
+2521	0.048705	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3310, FN=0, Flags=.p.....TC
+2524	0.049938	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3310, FN=0, Flags=.p..R..TC
+2527	0.051034	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3310, FN=0, Flags=.p..R..TC
+2530	0.052584	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3310, FN=0, Flags=.p..R..TC
+2533	0.055173	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3311, FN=0, Flags=.p.....TC
+2536	0.056402	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3311, FN=0, Flags=.p..R..TC
+```
+
+
+Example output (with TDMA):
+
+```bash
+./tc-tdma wlan0 5 --bssid=f4:1e:57:e8:61:90 -v --frame-TUs=20 --slots-per-frame=7
+```
+
+```wireshark
+1545	*REF*	Routerbo_e8:61:90	Broadcast	802.11	293	Beacon frame, SN=3093, FN=0, Flags=........C, BI=100, SSID="MightyRioGrande"
+1552	0.016940	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3645, FN=0, Flags=.p.....TC
+1557	0.020838	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3646, FN=0, Flags=.p.....TC
+1569	0.058062	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3647, FN=0, Flags=.p.....TC
+1572	0.059541	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3647, FN=0, Flags=.p..R..TC
+1583	0.078330	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3648, FN=0, Flags=.p.....TC
+1586	0.098532	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3649, FN=0, Flags=.p.....TC
+1589	0.101281	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3650, FN=0, Flags=.p.....TC
+1590	0.102812	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3650, FN=0, Flags=.p..R..TC
+1592	0.103280	Routerbo_e8:61:90	Broadcast	802.11	293	Beacon frame, SN=3094, FN=0, Flags=........C, BI=100, SSID="MightyRioGrande"
+1594	0.119786	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3651, FN=0, Flags=.p.....TC
+1599	0.161492	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3652, FN=0, Flags=.p.....TC
+1606	0.181765	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3653, FN=0, Flags=.p.....TC
+1617	0.201335	04:f4:1c:51:e7:19	Routerbo_e8:61:90	802.11	915	QoS Data, SN=3654, FN=0, Flags=.p.....TC
+```
+
+
+
+TBD: add graphs
