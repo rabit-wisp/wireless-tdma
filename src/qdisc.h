@@ -20,7 +20,6 @@ struct QdiscController
     int if_index;
     bool verbose;
     bool tx_enabled;
-    std::mutex mutex;
     struct rtnl_qdisc *qdisc;
 
     QdiscController(const std::string &iface, size_t bufferSize, bool verbose);
@@ -28,7 +27,6 @@ struct QdiscController
 
     void tx_resume();
     void tx_pause();
-    //static void packet_handler(uint8_t* user, const struct pcap_pkthdr* pkthdr, const uint8_t* packet);
 };
 
 #endif // _QDISC_H_

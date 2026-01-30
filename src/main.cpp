@@ -30,6 +30,7 @@ Options:
   --buffer-size=SIZE         number of packets to buffer during plug period [default: 10240]
   --count=COUNT              if specified, only run for specified number of TDMA frames
   --beacon-timeout=TIMEOUT   exit with error if first beacon doesn't arrive within timeout
+  --system-jitter=JITTER     expected system jitter in µs [default: 10]
   -v --verbose               show beacons and various things
 
 This program effectively does these 4 actions:
@@ -82,6 +83,20 @@ int show_beacon_stats(const std::string& interface, std::optional<std::array<uin
     return 0;
 }
 
+void set_thread_priority_high()
+{
+    pthread_t thread = pthread_self();
+
+    // Set scheduling policy to FIFO (real-time)
+    struct sched_param params;
+    params.sched_priority = sched_get_priority_max(SCHED_FIFO);
+
+    int result = pthread_setschedparam(thread, SCHED_FIFO, &params);
+    if (result != 0) {
+        std::cerr << "Failed to set thread priority: " << result << std::endl;
+    }
+}
+
 int main(int argc, const char* argv[])
 {
     auto args = docopt::docopt(USAGE, {argv + 1, argv + argc});
@@ -93,6 +108,7 @@ int main(int argc, const char* argv[])
     const size_t slotNumber = beacon_only ? 0 : args["<SLOT>"].asLong();
     const size_t slotsPerFrame = args["--slots-per-frame"].asLong();
     const size_t frameTUs = args["--frame-TUs"].asLong();
+    const size_t jitter = args["--system-jitter"].asLong();
     const auto frameDuration = std::chrono::microseconds(frameTUs * 1024);
     std::optional<std::array<uint8_t, 6>> bssid;
 
@@ -174,6 +190,7 @@ int main(int argc, const char* argv[])
                                        slotsPerFrame,
                                        firstFrame.value_or(TDMAScheduler::timestamp::clock::now()),
                                        frameDuration,
+                                       std::chrono::microseconds(jitter),
                                        [&](){ plug.tx_pause(); },
                                        [&](){ plug.tx_resume(); },
                                        pollCount,
@@ -192,6 +209,7 @@ int main(int argc, const char* argv[])
         std::signal(SIGINT, signal_handler);
         std::signal(SIGTERM, signal_handler);
 
+        set_thread_priority_high();
         scheduler.run();
 
     } catch ( std::exception& e ) {

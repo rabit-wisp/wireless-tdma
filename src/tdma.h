@@ -29,13 +29,12 @@ struct TDMAScheduler {
 
     // computed values
     std::chrono::microseconds slot_duration;   // slot duration
-
+    std::chrono::microseconds jitter;          // expected system jitter
+    std::chrono::nanoseconds nop_duration;    // this is the duration it takes to execute the cpu_spinner() nop call
 
     // configured values
     size_t slot_position;                      // our slot position
     size_t slots_per_frame;                    // number of slots per frame
-
-
 
     std::function<void()> pause_transmissions;
     std::function<void()> resume_transmissions;
@@ -44,10 +43,13 @@ struct TDMAScheduler {
                   size_t slotCount,
                   timestamp frame_start,
                   std::chrono::microseconds frame_duration,
+                  std::chrono::microseconds system_jitter,
                   std::function<void()> pause_transmissions,
                   std::function<void()> resume_transmissions,
                   std::optional<size_t> count,
                   bool verbose);
+
+    void cpu_spinner(int count) noexcept;
 
     void resynchronize(timestamp frame_start, size_t TUs);
     void terminate();

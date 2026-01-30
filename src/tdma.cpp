@@ -8,6 +8,7 @@ TDMAScheduler::TDMAScheduler(size_t slotPosition,
                              size_t slotCount,
                              timestamp frameStart,
                              std::chrono::microseconds frameDuration,
+                             std::chrono::microseconds systemJitter,
                              std::function<void()> pause,
                              std::function<void()> resume,
                              std::optional<size_t> count,
@@ -16,11 +17,38 @@ TDMAScheduler::TDMAScheduler(size_t slotPosition,
                                              frame_start(frameStart),
                                              frame_duration(frameDuration),
                                              slot_duration(frameDuration / slotCount),
+                                             jitter(systemJitter),
                                              pause_transmissions(pause),
                                              resume_transmissions(resume),
                                              count(count),
                                              verbose(verbose)
 {
+    std::array<std::chrono::nanoseconds, 21> timings;
+    constexpr size_t middle = timings.size() / 2;
+    constexpr size_t iterations = 100;
+    for (auto& t : timings)
+    {
+        const auto a = timestamp::clock::now();
+        cpu_spinner(iterations);
+        const auto b = timestamp::clock::now();
+        t = std::chrono::duration_cast<std::chrono::nanoseconds>(b - a);
+    }
+
+    std::nth_element(timings.begin(), timings.begin() + middle, timings.end());
+    nop_duration = timings[middle] / iterations;
+
+    if (verbose)
+        std::cout << "tdma: cpu spin cost " << std::fixed << std::setprecision(3) << double(nop_duration.count()) / 1000.0  << " µs" << std::endl;
+}
+
+void TDMAScheduler::cpu_spinner(int count) noexcept {
+    for (int i = 0; i < count ; i++ )
+        asm volatile(
+                     "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+                     "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+                     "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+                     ::: "memory"
+                     );
 }
 
 void TDMAScheduler::terminate() { stop = true; }
@@ -32,31 +60,52 @@ void TDMAScheduler::resynchronize(TDMAScheduler::timestamp beacon, size_t TUs)
     // TODO: think about the synchronization here
     //std::lock_guard<std::mutex> guard(mutex);
     if (verbose)
-        std::cout << "resynchronizing tdma scheduler - new beacon start "
-                  << beacon.time_since_epoch().count() << "ns beacon interval: " << TUs << " TUs" << std::endl;
+        std::cout << "qdisc SYNC: @" << std::fixed << std::setprecision(6) << (double)(beacon.time_since_epoch().count()) / 1e9
+                  << " s   |   beacon interval: " << TUs << " TUs" << std::endl;
 
     frame_start = beacon + frame_duration;
 }
 
 void TDMAScheduler::run()
 {
-    // we purposefully set the frame start to 5 seconds in the future because the default state of the TDMA scheduler
-    // upon construction is to simply let traffic pass through - and thus behave like a vanilla wifi client.
+    using namespace std::chrono;
+    const auto downtime = slot_duration * slot_position;
+
+    pause_transmissions();
 
     while(!stop && (!count || count.value() > 0))
     {
-        if(count)
-            count.value()--;
+        !!count && --*count;
 
-        pause_transmissions();
+        const time_point this_frame_start = frame_start.load() + downtime;
+        std::this_thread::sleep_until(this_frame_start - jitter);
 
-        std::this_thread::sleep_until(frame_start.load() + (slot_duration * slot_position));
+        nanoseconds remaining = duration_cast<nanoseconds>(this_frame_start - timestamp::clock::now());
+        cpu_spinner(remaining / nop_duration);
 
+        const auto slotStart = timestamp::clock::now();
 
         resume_transmissions();
 
-        std::this_thread::sleep_for(slot_duration);
-        //std::this_thread::sleep_until(current_frame.load() + (slot_duration * (slot_position + 1)));
+        std::this_thread::sleep_for(slot_duration - jitter);
+
+        remaining = duration_cast<nanoseconds>(slot_duration - (timestamp::clock::now() - slotStart));
+        cpu_spinner(remaining / nop_duration);
+
+        const auto slotEnd = timestamp::clock::now();
+
+        pause_transmissions();
+
+        if (verbose)
+        {
+            const auto a = duration_cast<microseconds>(slotStart - frame_start.load()).count();
+            const auto b = duration_cast<microseconds>(slotEnd - frame_start.load()).count();
+            std::cout << "qdisc PLUG: @"
+                      << (double)frame_start.load().time_since_epoch().count() / 1e9
+                      << " s   | " << std::setw(8) << std::setfill(' ') << a
+                      << "  --> " << std::setw(8) << std::setfill(' ') << b << " µs"
+                      << "   | total duration: " << std::setw(8) << std::setfill(' ') << b - a  << "µs" << std::endl;
+        }
 
         frame_start = frame_start.load() + frame_duration;
     }
