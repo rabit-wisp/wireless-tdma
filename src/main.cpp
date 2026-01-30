@@ -4,6 +4,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
+#include <ranges>
 
 #include "docopt.h"
 #include "tdma.h"
@@ -16,19 +17,20 @@ static const char USAGE[] =
 R"(Cooperative TDMA scheduler
 
 Usage:
-  tc-tdma <INTERFACE> <SLOT> [options]
-  tc-tdma <INTERFACE> --show-beacons
+  tc-tdma <INTERFACE> <SLOT> --bssid=BSSID [options]
+  tc-tdma <INTERFACE> --show-beacons [--bssid=BSSID]
 
 Options:
   <INTERFACE>                name of interface to attach to (e.g. wlan0)
   <SLOT>                     ordinal 0-based index of TDMA slot
+  --bssid=BSSID              BSSID to synchronize with (in XX:XX:XX:XX:XX:XX format)
   --show-beacons             don't do TDMA, simply show beacon frame statistics
   --slots-per-frame=SLOTS    number of slots per TDMA frame [default: 10]
   --frame-TUs=TUs            Time Units for each TDMA frame [default: 10]
   --buffer-size=SIZE         number of packets to buffer during plug period [default: 10240]
   --count=COUNT              if specified, only run for specified number of TDMA frames
   --beacon-timeout=TIMEOUT   exit with error if first beacon doesn't arrive within timeout
-  --verbose                  show beacons and various things
+  -v --verbose               show beacons and various things
 
 This program effectively does these 4 actions:
 
@@ -45,9 +47,10 @@ This program effectively does these 4 actions:
  *   tc qdisc del dev wlan0 root
  */
 
-int show_beacon_stats(const std::string& interface)
+int show_beacon_stats(const std::string& interface, std::optional<std::array<uint8_t, 6>> bssid)
 {
-    Beacon beacon(interface, [&](auto ts, auto... args){}, true, true);
+    Beacon beacon(interface, bssid, [&](auto ts, auto... args){}, true);
+    beacon.listen();
 
     static std::condition_variable terminate;
     std::mutex mutex;
@@ -71,13 +74,44 @@ int main(int argc, const char* argv[])
 {
     auto args = docopt::docopt(USAGE, {argv + 1, argv + argc});
 
+    const bool beacon_only = args["--show-beacons"].asBool();
+    const std::string interface = args["<INTERFACE>"].asString();
+    const size_t slotNumber = beacon_only ? 0 : args["<SLOT>"].asLong();
+    const size_t slotsPerFrame = args["--slots-per-frame"].asLong();
+    const size_t frameTUs = args["--frame-TUs"].asLong();
+    const auto frameDuration = std::chrono::microseconds(frameTUs * 1024);
+    std::optional<std::array<uint8_t, 6>> bssid;
 
-    bool beacon_only = args["--show-beacons"].asBool();
-    std::string interface = args["<INTERFACE>"].asString();
-    size_t slotNumber = beacon_only ? 0 : args["<SLOT>"].asLong();
-    size_t slotsPerFrame = args["--slots-per-frame"].asLong();
-    size_t frameTUs = args["--frame-TUs"].asLong();
-    auto frameDuration = std::chrono::microseconds(frameTUs * 1024);
+    if (args["--bssid"]) {
+        const auto bssidString = args["--bssid"].asString();
+        if (bssidString.length() != 17) {
+            std::cout << "BSSID must be specified in XX:XX:XX:XX:XX:XX format. Got " << bssidString << " (1)." << std::endl;
+            return 1;
+        }
+        auto tokens = bssidString
+            | std::views::split(':')
+            | std::views::transform([](auto &&rng) {
+                return std::string(rng.begin(), rng.end());
+            });
+
+        if (std::ranges::distance(tokens) != 6 ) {
+            std::cout << "BSSID must be specified in XX:XX:XX:XX:XX:XX format. Got "
+                      << bssidString << " (2)." << std::endl;
+          return 2;
+        }
+
+        if (!std::all_of(tokens.begin(), tokens.end(), [](auto a) { return a.length() == 2; })) {
+                std::cout << "BSSID must be specified in XX:XX:XX:XX:XX:XX format. Got "
+                      << bssidString << " (3)." << std::endl;
+            return 3;
+        }
+
+        bssid.emplace();
+        std::transform(tokens.begin(),
+                       tokens.end(),
+                       bssid.value().begin(),
+                       [](const std::string &s) { return static_cast<uint8_t>(std::stoi(s, nullptr, 16));});
+    }
 
     using ms = std::chrono::milliseconds;
     std::optional<ms> timeout = (args["--beacon-timeout"] ?
@@ -88,7 +122,7 @@ int main(int argc, const char* argv[])
     try
     {
         if (beacon_only)
-            return show_beacon_stats(interface);
+            return show_beacon_stats(interface, bssid);
 
         QdiscController plug(interface, args["--buffer-size"].asLong(), verbose); // qdisc plug controller
 
@@ -97,13 +131,14 @@ int main(int argc, const char* argv[])
         std::optional<TDMAScheduler::timestamp> firstFrame;
 
         // 80211 BSS beacon broadcast listener
-        Beacon beacon(interface,
-                      [&](auto ts, auto... args){
-                          std::unique_lock<std::mutex> lock(mutex);
-                          firstFrame = ts;
-                          first_beacon.notify_one();
-                      },
-                      true); // be verbose for first beacon
+        Beacon beacon( interface,
+                       bssid,
+                       [&](auto ts, auto... args) {
+                           std::unique_lock<std::mutex> lock(mutex);
+                           firstFrame = ts;
+                           first_beacon.notify_one();
+                       },
+                       true); // be verbose for first beacon
 
         beacon.listen();
 

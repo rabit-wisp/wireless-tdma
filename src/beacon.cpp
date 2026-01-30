@@ -8,8 +8,10 @@
 using std::chrono::operator""us;
 
 Beacon::Beacon(std::string interface,
+               std::optional<std::array<uint8_t, 6>> bssid,
                Beacon::sync_function&& func,
                bool verbose) : interface(interface),
+                               bssid(bssid),
                                sync(func),
                                verbose(verbose)
 {
@@ -119,18 +121,18 @@ void Beacon::begin_worker(Beacon* this_)
 }
 
 //void Beacon::show_beacon(const struct pcap_pkthdr* pkthdr, const uint8_t* packet)
-void Beacon::show_beacon(const uint8_t bssid[6], uint64_t rx, uint64_t tsf)
+void Beacon::show_beacon(const uint8_t beacon[6], uint64_t rx, uint64_t tsf)
 {
     static int64_t previous_diff = rx - tsf;
     int64_t this_diff = rx - tsf;
 
     std::cout << "BSSID: " << std::hex << std::setw(2) << std::setfill('0')
-              << static_cast<int>(bssid[0]) << ":"
-              << static_cast<int>(bssid[1]) << ":"
-              << static_cast<int>(bssid[2]) << ":"
-              << static_cast<int>(bssid[3]) << ":"
-              << static_cast<int>(bssid[4]) << ":"
-              << static_cast<int>(bssid[5])
+              << static_cast<int>(beacon[0]) << ":"
+              << static_cast<int>(beacon[1]) << ":"
+              << static_cast<int>(beacon[2]) << ":"
+              << static_cast<int>(beacon[3]) << ":"
+              << static_cast<int>(beacon[4]) << ":"
+              << static_cast<int>(beacon[5])
               << std::dec
         //<< " | local clock: " << std::setfill(' ') << std::setw(16) << std::chrono::steady_clock::now().time_since_epoch().count() / 1000 << " µs"
               << " | local clock: " << std::setw(16)  << std::setfill(' ') << rx << " µs"
@@ -182,6 +184,10 @@ void Beacon::packet_handler_impl(std::chrono::steady_clock::time_point rx, const
 
     // Parse 802.11 header (after radiotap)
     const ieee80211_mgmt_header* mgmt = reinterpret_cast<const ieee80211_mgmt_header*>(packet + rtap_len);
+
+    if (!!bssid && bssid.value() != std::to_array(mgmt->bssid))
+        return;
+
     // Check if this is a beacon frame (type=0, subtype=8)
     if (mgmt->fc.type == 0 && mgmt->fc.subtype == 8)
     {
