@@ -80,12 +80,17 @@ void TDMAScheduler::run()
         const time_point this_frame_start = frame_start.load() + downtime;
         std::this_thread::sleep_until(this_frame_start - jitter);
 
+        nanoseconds remaining = duration_cast<nanoseconds>(this_frame_start - timestamp::clock::now());
+        cpu_spinner(remaining / nop_duration);
 
         const auto slotStart = timestamp::clock::now();
 
         resume_transmissions();
 
         std::this_thread::sleep_for(slot_duration - jitter);
+
+        remaining = duration_cast<nanoseconds>(slot_duration - (timestamp::clock::now() - slotStart));
+        cpu_spinner(remaining / nop_duration);
 
         const auto slotEnd = timestamp::clock::now();
 
