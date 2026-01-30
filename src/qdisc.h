@@ -20,7 +20,6 @@ struct QdiscController
     int if_index;
     bool verbose;
     bool tx_enabled;
-    std::mutex mutex;
     struct rtnl_qdisc *qdisc;
 
     QdiscController(const std::string &iface, size_t bufferSize, bool verbose);
