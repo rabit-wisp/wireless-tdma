@@ -112,11 +112,6 @@ void Beacon::listen()
 
 void Beacon::begin_worker(Beacon* this_)
 {
-    std::cout << "Starting WiFi beacon detection on interface: " << this_->interface << std::endl;
-    std::cout << std::string(80, '=') << std::endl;
-    std::cout << "Capturing beacon frames... (Press Ctrl+C to stop)" << std::endl;
-    std::cout << std::string(80, '-') << std::endl;
-
     pcap_loop(this_->handle, 0, Beacon::packet_handler, reinterpret_cast<u_char*>(this_));
 }
 
@@ -126,7 +121,7 @@ void Beacon::show_beacon(const uint8_t beacon[6], uint64_t rx, uint64_t tsf)
     static int64_t previous_diff = rx - tsf;
     int64_t this_diff = rx - tsf;
 
-    std::cout << "BSSID: " << std::hex << std::setw(2) << std::setfill('0')
+    std::cout << "beacon:       " << std::hex << std::setw(2) << std::setfill('0')
               << static_cast<int>(beacon[0]) << ":"
               << static_cast<int>(beacon[1]) << ":"
               << static_cast<int>(beacon[2]) << ":"
@@ -149,31 +144,30 @@ void Beacon::update_clock_offset(std::chrono::microseconds tsf_epoch,
                                  std::chrono::steady_clock::time_point steady_timestamp)
 {
     /*
-     * @tsf_epoch is maintained by the remote AP hardware - presumptively, it is hardware driven
+     * @tsf_epoch is maintained by the AP hardware (remote) - presumptively, it is networking hardware driven
      * @steady_timestamp corresponds to our local steady_clock representation and while it may be steady
      * it is subject to jitter (reception and cpu).
      *
-     * We maintain a lowest bound of the offset between the two: while the steady_timestamp snapshot
-     * may be obtained late, it will never be obtained earlier than the remote snapshot (which we assume to beacon
-     * ground truth). Therefore, we simply return the running minimum of the offset (but not for an infinite time
-     * horizon since the remote clock may very well drift in either direction).
+     * this function maintains a running window of offsets between the remote beacon TSF and the local steady clock.
+     * We cannot simply take the minimum offset ever seen because the clocks can drift away from each other in either
+     * direction indefinitely.
      */
 
     auto diff = std::chrono::duration_cast<std::chrono::microseconds>(steady_timestamp.time_since_epoch()) - tsf_epoch;
 
     if (!tsf_to_steady_clock_offset) // first time initialization
     {
-        std::fill(clock_offset_buffer.begin(), clock_offset_buffer.end(), diff);
         tsf_to_steady_clock_offset = diff;
+        std::fill(clock_offset_buffer.begin(),
+                  clock_offset_buffer.end(),
+                  diff);
     }
 
     // left shift clock_offset_buffer
     std::copy(clock_offset_buffer.begin() + 1, clock_offset_buffer.end(), clock_offset_buffer.begin());
     clock_offset_buffer.back() = diff;
 
-    //for( auto i : clock_offset_buffer) std::cout << i << " ";
-    //std::cout << std::endl;
-
+    // get the running minimum
     tsf_to_steady_clock_offset = *std::min_element(clock_offset_buffer.begin(),clock_offset_buffer.end());
 }
 
@@ -185,6 +179,7 @@ void Beacon::packet_handler_impl(std::chrono::steady_clock::time_point rx, const
     // Parse 802.11 header (after radiotap)
     const ieee80211_mgmt_header* mgmt = reinterpret_cast<const ieee80211_mgmt_header*>(packet + rtap_len);
 
+    // filter by BSSID if it is set
     if (!!bssid && bssid.value() != std::to_array(mgmt->bssid))
         return;
 
@@ -192,24 +187,21 @@ void Beacon::packet_handler_impl(std::chrono::steady_clock::time_point rx, const
     if (mgmt->fc.type == 0 && mgmt->fc.subtype == 8)
     {
         const beacon_fixed_params* beacon = reinterpret_cast<const beacon_fixed_params*>(packet + rtap_len + sizeof(ieee80211_mgmt_header));
-        uint64_t reception_time_us = (uint64_t)pkthdr->ts.tv_sec * 1000000ULL + (uint64_t)pkthdr->ts.tv_usec;
-        auto seconds = std::chrono::seconds(pkthdr->ts.tv_sec);
-        auto useconds = std::chrono::microseconds(pkthdr->ts.tv_usec);
-        uint64_t tsf_time_us = beacon->timestamp;
+
+        // uint64_t reception_time_us = (uint64_t)pkthdr->ts.tv_sec * 1000000ULL + (uint64_t)pkthdr->ts.tv_usec;
+        // the hardware reception time from the packet header is less useful than one might think as it is
+        // a) not readily available on embedded hardware platforms, and b) irrelevant to our needs since we are trying to
+        // compute the offset between local wall clock time and remote advertised TSF time.
 
         update_clock_offset(std::chrono::microseconds(beacon->timestamp), rx);
 
-        uint16_t beacon_interval_tu = beacon->beacon_interval;
-        auto beacon_interval = std::chrono::microseconds(beacon_interval_tu * 1024);
-
         if (verbose)
-            show_beacon(mgmt->bssid, rx.time_since_epoch().count() / 1000, tsf_time_us);
-
+            show_beacon(mgmt->bssid, rx.time_since_epoch().count() / 1000, beacon->timestamp);
 
         // don't synchronize if we don't yet know the offset between remote and local
         // (i.e. remote is simply a meaningless number)
         if (tsf_to_steady_clock_offset)
-            sync(std::chrono::steady_clock::time_point{} + (std::chrono::microseconds(tsf_time_us) + tsf_to_steady_clock_offset.value()),
+            sync(std::chrono::steady_clock::time_point{} + (std::chrono::microseconds(beacon->timestamp) + tsf_to_steady_clock_offset.value()),
                  beacon->beacon_interval);
     }
 };

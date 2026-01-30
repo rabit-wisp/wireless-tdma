@@ -47,9 +47,21 @@ This program effectively does these 4 actions:
  *   tc qdisc del dev wlan0 root
  */
 
+class comma_numpunct : public std::numpunct<char> {
+protected:
+    virtual char do_thousands_sep() const { return ','; }
+    virtual std::string do_grouping() const { return "\03"; } // Group by 3
+};
+
 int show_beacon_stats(const std::string& interface, std::optional<std::array<uint8_t, 6>> bssid)
 {
     Beacon beacon(interface, bssid, [&](auto ts, auto... args){}, true);
+
+    std::cout << "Starting WiFi beacon detection on interface: " << interface << std::endl;
+    std::cout << std::string(80, '=') << std::endl;
+    std::cout << "Capturing beacon frames... (Press Ctrl+C to stop)" << std::endl;
+    std::cout << std::string(80, '-') << std::endl;
+
     beacon.listen();
 
     static std::condition_variable terminate;
@@ -74,6 +86,8 @@ int main(int argc, const char* argv[])
 {
     auto args = docopt::docopt(USAGE, {argv + 1, argv + argc});
 
+    std::locale comma_locale(std::locale(), new comma_numpunct());
+    std::cout.imbue(comma_locale);
     const bool beacon_only = args["--show-beacons"].asBool();
     const std::string interface = args["<INTERFACE>"].asString();
     const size_t slotNumber = beacon_only ? 0 : args["<SLOT>"].asLong();
