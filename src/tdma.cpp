@@ -72,8 +72,7 @@ void TDMAScheduler::run()
 
     while(!stop && (!count || count.value() > 0))
     {
-        if(count)
-            count.value()--;
+        !!count && --*count;
 
         pause_transmissions();
 
