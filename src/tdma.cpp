@@ -23,6 +23,32 @@ TDMAScheduler::TDMAScheduler(size_t slotPosition,
                                              count(count),
                                              verbose(verbose)
 {
+    std::array<std::chrono::nanoseconds, 21> timings;
+    constexpr size_t middle = timings.size() / 2;
+    constexpr size_t iterations = 100;
+    for (auto& t : timings)
+    {
+        const auto a = timestamp::clock::now();
+        cpu_spinner(iterations);
+        const auto b = timestamp::clock::now();
+        t = std::chrono::duration_cast<std::chrono::nanoseconds>(b - a);
+    }
+
+    std::nth_element(timings.begin(), timings.begin() + middle, timings.end());
+    nop_duration = timings[middle] / iterations;
+
+    if (verbose)
+        std::cout << "tdma: cpu spin cost " << std::fixed << std::setprecision(3) << double(nop_duration.count()) / 1000.0  << " µs" << std::endl;
+}
+
+void TDMAScheduler::cpu_spinner(int count) noexcept {
+    for (int i = 0; i < count ; i++ )
+        asm volatile(
+                     "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+                     "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+                     "nop; nop; nop; nop; nop; nop; nop; nop; nop; nop;"
+                     ::: "memory"
+                     );
 }
 
 void TDMAScheduler::terminate() { stop = true; }
