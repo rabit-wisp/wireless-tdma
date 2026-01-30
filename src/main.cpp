@@ -82,6 +82,20 @@ int show_beacon_stats(const std::string& interface, std::optional<std::array<uin
     return 0;
 }
 
+void set_thread_priority_high()
+{
+    pthread_t thread = pthread_self();
+
+    // Set scheduling policy to FIFO (real-time)
+    struct sched_param params;
+    params.sched_priority = sched_get_priority_max(SCHED_FIFO);
+
+    int result = pthread_setschedparam(thread, SCHED_FIFO, &params);
+    if (result != 0) {
+        std::cerr << "Failed to set thread priority: " << result << std::endl;
+    }
+}
+
 int main(int argc, const char* argv[])
 {
     auto args = docopt::docopt(USAGE, {argv + 1, argv + argc});
@@ -192,6 +206,7 @@ int main(int argc, const char* argv[])
         std::signal(SIGINT, signal_handler);
         std::signal(SIGTERM, signal_handler);
 
+        set_thread_priority_high();
         scheduler.run();
 
     } catch ( std::exception& e ) {
