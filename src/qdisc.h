@@ -27,7 +27,6 @@ struct QdiscController
 
     void tx_resume();
     void tx_pause();
-    //static void packet_handler(uint8_t* user, const struct pcap_pkthdr* pkthdr, const uint8_t* packet);
 };
 
 #endif // _QDISC_H_
