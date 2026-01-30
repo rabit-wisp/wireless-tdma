@@ -30,6 +30,7 @@ Options:
   --buffer-size=SIZE         number of packets to buffer during plug period [default: 10240]
   --count=COUNT              if specified, only run for specified number of TDMA frames
   --beacon-timeout=TIMEOUT   exit with error if first beacon doesn't arrive within timeout
+  --system-jitter=JITTER     expected system jitter in µs [default: 10]
   -v --verbose               show beacons and various things
 
 This program effectively does these 4 actions:
@@ -107,6 +108,7 @@ int main(int argc, const char* argv[])
     const size_t slotNumber = beacon_only ? 0 : args["<SLOT>"].asLong();
     const size_t slotsPerFrame = args["--slots-per-frame"].asLong();
     const size_t frameTUs = args["--frame-TUs"].asLong();
+    const size_t jitter = args["--system-jitter"].asLong();
     const auto frameDuration = std::chrono::microseconds(frameTUs * 1024);
     std::optional<std::array<uint8_t, 6>> bssid;
 
@@ -188,7 +190,7 @@ int main(int argc, const char* argv[])
                                        slotsPerFrame,
                                        firstFrame.value_or(TDMAScheduler::timestamp::clock::now()),
                                        frameDuration,
-                                       10us,
+                                       std::chrono::microseconds(jitter),
                                        [&](){ plug.tx_pause(); },
                                        [&](){ plug.tx_resume(); },
                                        pollCount,
