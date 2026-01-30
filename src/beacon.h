@@ -16,6 +16,7 @@ struct Beacon {
     sync_function& sync;
     std::string interface;
     bool verbose;
+    std::optional<std::array<uint8_t, 6>> bssid;
 
     pcap_t *handle;
     std::thread worker;
@@ -23,7 +24,7 @@ struct Beacon {
     std::optional<std::chrono::microseconds> tsf_to_steady_clock_offset; // offset between beacon TSF and std::chrono::steady_clock
     std::vector<std::chrono::microseconds> clock_offset_buffer;
 
-    Beacon(std::string interface, sync_function&& synchronize, bool verbose);
+    Beacon(std::string interface, std::optional<std::array<uint8_t, 6>> bssid, sync_function &&synchronize, bool verbose);
     ~Beacon();
 
     void listen();
