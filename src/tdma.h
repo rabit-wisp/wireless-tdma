@@ -30,6 +30,7 @@ struct TDMAScheduler {
     // computed values
     std::chrono::microseconds slot_duration;   // slot duration
 
+    std::chrono::microseconds jitter;          // expected system jitter
 
     // configured values
     size_t slot_position;                      // our slot position
@@ -44,6 +45,7 @@ struct TDMAScheduler {
                   size_t slotCount,
                   timestamp frame_start,
                   std::chrono::microseconds frame_duration,
+                  std::chrono::microseconds system_jitter,
                   std::function<void()> pause_transmissions,
                   std::function<void()> resume_transmissions,
                   std::optional<size_t> count,

@@ -188,6 +188,7 @@ int main(int argc, const char* argv[])
                                        slotsPerFrame,
                                        firstFrame.value_or(TDMAScheduler::timestamp::clock::now()),
                                        frameDuration,
+                                       10us,
                                        [&](){ plug.tx_pause(); },
                                        [&](){ plug.tx_resume(); },
                                        pollCount,
