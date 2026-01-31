@@ -76,6 +76,8 @@ QdiscController::~QdiscController()
 
 void QdiscController::tx_resume()
 {
+    if (tx_enabled)
+        return;
 
     rtnl_qdisc_plug_release_indefinite(qdisc);
     int err = rtnl_qdisc_update(socket, qdisc, qdisc, NLM_F_REPLACE);
@@ -92,6 +94,8 @@ void QdiscController::tx_resume()
 // tc qdisc change dev wlan0 root plug block
 void QdiscController::tx_pause()
 {
+    if (!tx_enabled)
+        return;
 
     rtnl_qdisc_plug_buffer(qdisc);
     int err = rtnl_qdisc_update(socket, qdisc, qdisc, NLM_F_REPLACE);

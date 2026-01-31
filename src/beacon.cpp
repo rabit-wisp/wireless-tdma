@@ -1,4 +1,5 @@
 #include "beacon.h"
+#include <iomanip>
 #include <exception>
 #include <algorithm>
 #include <pcap.h>

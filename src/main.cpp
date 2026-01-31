@@ -17,12 +17,13 @@ static const char USAGE[] =
 R"(Cooperative TDMA scheduler
 
 Usage:
-  tc-tdma <INTERFACE> <SLOT> --bssid=BSSID [options]
+  tc-tdma <INTERFACE> <SLOTS>... (--bssid=BSSID|--AP-mode) [options]
   tc-tdma <INTERFACE> --show-beacons [--bssid=BSSID]
 
 Options:
   <INTERFACE>                name of interface to attach to (e.g. wlan0)
-  <SLOT>                     ordinal 0-based index of TDMA slot
+  <SLOTS>                    ordinal 0-based index of TDMA slot
+  --AP-mode                  run on access point
   --bssid=BSSID              BSSID to synchronize with (in XX:XX:XX:XX:XX:XX format)
   --show-beacons             don't do TDMA, simply show beacon frame statistics
   --slots-per-frame=SLOTS    number of slots per TDMA frame [default: 10]
@@ -97,20 +98,72 @@ void set_thread_priority_high()
     }
 }
 
+std::vector<TDMAScheduler::slot_info> getSlotNumbers(const std::vector<std::string>& slots)
+{
+    if (slots.empty()) return {};
+
+    std::vector<size_t> indices(slots.size());
+    std::transform(slots.begin(),
+                   slots.end(),
+                   indices.begin(),
+                   [](const auto& a) {
+                       return std::stoul(a);
+                   });
+
+    // Merge consecutive indices into spans
+    std::vector<TDMAScheduler::slot_info> results;
+    size_t span_start = indices[0];
+    size_t span_length = 1;
+
+    for (size_t i = 1; i < indices.size(); i++) {
+        if (indices[i] == indices[i-1] + 1) {
+            // Consecutive index, extend the span
+            ++span_length;
+        } else {
+            // Gap found, save current span and start new one
+            results.emplace_back(span_start, span_length);
+            span_start = indices[i];
+            span_length = 1;
+        }
+    }
+    // Add the last span
+    results.emplace_back(span_start, span_length);
+
+    return results;
+}
+
 int main(int argc, const char* argv[])
 {
     auto args = docopt::docopt(USAGE, {argv + 1, argv + argc});
 
     std::locale comma_locale(std::locale(), new comma_numpunct());
     std::cout.imbue(comma_locale);
+    const bool ap_mode = args["--AP-mode"].asBool();
     const bool beacon_only = args["--show-beacons"].asBool();
     const std::string interface = args["<INTERFACE>"].asString();
-    const size_t slotNumber = beacon_only ? 0 : args["<SLOT>"].asLong();
+    const auto slots = beacon_only ? std::vector<TDMAScheduler::slot_info>{} : getSlotNumbers(args["<SLOTS>"].asStringList());
     const size_t slotsPerFrame = args["--slots-per-frame"].asLong();
     const size_t frameTUs = args["--frame-TUs"].asLong();
     const size_t jitter = args["--system-jitter"].asLong();
     const auto frameDuration = std::chrono::microseconds(frameTUs * 1024);
     std::optional<std::array<uint8_t, 6>> bssid;
+
+    if (!slots.empty() &&
+        !ap_mode &&
+        slots[0].index == 0 &&
+        (slots.back().index + slots.back().length) == slotsPerFrame)
+    {
+        std::cout << "Error: found slots wrapping around frame - this is only allowed in AP mode" << std::endl;
+        return 1;
+    }
+
+    if( std::any_of(slots.begin(),
+                    slots.end(),
+                    [slotsPerFrame](const auto& a){ return a.index >= slotsPerFrame; }))
+    {
+        std::cout << "slots must be les than the total number of --slots-per-frame " << std::endl;
+        return 1;
+    }
 
     if (args["--bssid"]) {
         const auto bssidString = args["--bssid"].asString();
@@ -186,7 +239,7 @@ int main(int argc, const char* argv[])
             beacon.verbose = verbose; // after first beacon has been received, assume global verbosity level
         }
 
-        static TDMAScheduler scheduler(slotNumber,
+        static TDMAScheduler scheduler(slots,
                                        slotsPerFrame,
                                        firstFrame.value_or(TDMAScheduler::timestamp::clock::now()),
                                        frameDuration,
