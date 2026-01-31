@@ -17,7 +17,7 @@ static const char USAGE[] =
 R"(Cooperative TDMA scheduler
 
 Usage:
-  tc-tdma <INTERFACE> <SLOTS>... --bssid=BSSID [options]
+  tc-tdma <INTERFACE> <SLOTS>... (--bssid=BSSID|--AP-mode) [options]
   tc-tdma <INTERFACE> --show-beacons [--bssid=BSSID]
 
 Options:
@@ -138,6 +138,7 @@ int main(int argc, const char* argv[])
 
     std::locale comma_locale(std::locale(), new comma_numpunct());
     std::cout.imbue(comma_locale);
+    const bool ap_mode = args["--AP-mode"].asBool();
     const bool beacon_only = args["--show-beacons"].asBool();
     const std::string interface = args["<INTERFACE>"].asString();
     const auto slots = beacon_only ? std::vector<TDMAScheduler::slot_info>{} : getSlotNumbers(args["<SLOTS>"].asStringList());
@@ -148,6 +149,7 @@ int main(int argc, const char* argv[])
     std::optional<std::array<uint8_t, 6>> bssid;
 
     if (!slots.empty() &&
+        !ap_mode &&
         slots[0].index == 0 &&
         (slots.back().index + slots.back().length) == slotsPerFrame)
     {
