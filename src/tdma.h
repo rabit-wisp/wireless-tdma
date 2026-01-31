@@ -16,6 +16,10 @@ struct TDMAScheduler {
    */
 
     using timestamp = std::chrono::time_point<std::chrono::steady_clock>;
+    typedef struct {
+        size_t index;
+        size_t length;
+    } slot_info;
 
     std::atomic<timestamp> frame_start;
     std::chrono::microseconds frame_duration;
@@ -30,16 +34,16 @@ struct TDMAScheduler {
     // computed values
     std::chrono::microseconds slot_duration;   // slot duration
     std::chrono::microseconds jitter;          // expected system jitter
-    std::chrono::nanoseconds nop_duration;    // this is the duration it takes to execute the cpu_spinner(1) nop call
+    std::chrono::nanoseconds nop_duration;     // this is the duration it takes to execute the cpu_spinner(1) nop call
 
     // configured values
-    size_t slot_position;                      // our slot position
+    std::vector<slot_info>  slots;             // our slot position
     size_t slots_per_frame;                    // number of slots per frame
 
     std::function<void()> pause_transmissions;
     std::function<void()> resume_transmissions;
 
-    TDMAScheduler(size_t slotPosition,
+    TDMAScheduler(std::vector<slot_info> slots,
                   size_t slotCount,
                   timestamp frame_start,
                   std::chrono::microseconds frame_duration,

@@ -6,7 +6,7 @@
 
 using std::chrono::operator""s;
 
-TDMAScheduler::TDMAScheduler(size_t slotPosition,
+TDMAScheduler::TDMAScheduler(std::vector<slot_info> slots,
                              size_t slotCount,
                              timestamp frameStart,
                              std::chrono::microseconds frameDuration,
@@ -14,7 +14,7 @@ TDMAScheduler::TDMAScheduler(size_t slotPosition,
                              std::function<void()> pause,
                              std::function<void()> resume,
                              std::optional<size_t> count,
-                             bool verbose) : slot_position(slotPosition),
+                             bool verbose) : slots(slots),
                                              slots_per_frame(slotCount),
                                              frame_start(frameStart),
                                              frame_duration(frameDuration),
@@ -22,7 +22,7 @@ TDMAScheduler::TDMAScheduler(size_t slotPosition,
                                              jitter(systemJitter),
                                              pause_transmissions(pause),
                                              resume_transmissions(resume),
-                                             count(count),
+                                             frame_counter(count),
                                              verbose(verbose)
 {
     std::array<std::chrono::nanoseconds, 21> timings;
@@ -71,42 +71,76 @@ void TDMAScheduler::resynchronize(TDMAScheduler::timestamp beacon, size_t TUs)
 void TDMAScheduler::run()
 {
     using namespace std::chrono;
-    const auto downtime = slot_duration * slot_position;
+    const bool wrapAround = slots[0].index == 0 && ((slots.back().index + slots.back().length) == slots_per_frame);
+    const bool first_slot_live = slots[0].index == 0; // if we occupy the first slot 
+    const auto first_slot_downtime = slot_duration * slots[0].index; // this is the beginning of the first slot in a frame
 
-    pause_transmissions();
+    pause_transmissions(); // default state is to be plugged
 
-    while(!stop && (!count || count.value() > 0))
+    while(!stop && (!frame_counter || *frame_counter > 0))
     {
-        !!count && --*count;
+        ////////////////////////////////////////////////////////////////////////////////////////////
+        // FRAME BEGIN
+        // At the beginning of the frame, we do an absolute time alignment for two reasons:
+        // 1) during the frame, we may have accumulated drift from repeated relative timed sleeps
+        // 2) we may have received a new beacon that makes us have to resynchronize our frame
 
-        const time_point this_frame_start = frame_start.load() + downtime;
-        std::this_thread::sleep_until(this_frame_start - jitter);
+        !!frame_counter && --*frame_counter;
 
-        nanoseconds remaining = duration_cast<nanoseconds>(this_frame_start - timestamp::clock::now());
+        const time_point first_slot = frame_start.load() + first_slot_downtime;
+        std::this_thread::sleep_until(first_slot - jitter);
+
+        nanoseconds remaining = duration_cast<nanoseconds>(first_slot - timestamp::clock::now());
         cpu_spinner(remaining / nop_duration);
 
-        const auto slotStart = timestamp::clock::now();
-
-        resume_transmissions();
-
-        std::this_thread::sleep_for(slot_duration - jitter);
-
-        remaining = duration_cast<nanoseconds>(slot_duration - (timestamp::clock::now() - slotStart));
-        cpu_spinner(remaining / nop_duration);
-
-        const auto slotEnd = timestamp::clock::now();
-
-        pause_transmissions();
-
-        if (verbose)
+        // SLOTS
+        for (auto it = slots.begin(); it != slots.end(); it++)
         {
-            const auto a = duration_cast<microseconds>(slotStart - frame_start.load()).count();
-            const auto b = duration_cast<microseconds>(slotEnd - frame_start.load()).count();
-            std::cout << "qdisc PLUG: @"
-                      << (double)frame_start.load().time_since_epoch().count() / 1e9
-                      << " s   | " << std::setw(8) << std::setfill(' ') << a
-                      << "  --> " << std::setw(8) << std::setfill(' ') << b << " µs"
-                      << "   | total duration: " << std::setw(8) << std::setfill(' ') << b - a  << "µs" << std::endl;
+            const auto& current_slot = *it;
+            auto next_it = std::next(it);
+            const bool lastSlot = next_it == slots.end();
+            const bool wrappedSlot = wrapAround && lastSlot; 
+
+            const auto slotStart = timestamp::clock::now();
+            resume_transmissions();
+
+            const auto sleep_duration = (slot_duration * current_slot.length);
+            std::this_thread::sleep_for(sleep_duration - jitter);
+
+            remaining = duration_cast<nanoseconds>(sleep_duration - (timestamp::clock::now() - slotStart));
+
+            cpu_spinner(remaining / nop_duration);
+
+            const auto slotEnd = timestamp::clock::now();
+
+            // minor optimization: don't pause transmissions if this slot is the last of the frame and the frame starts
+            // with our slot as well
+            if ( !wrappedSlot ) [[likely]]
+                pause_transmissions();
+
+            if (verbose)
+            {
+                const auto a = duration_cast<microseconds>(slotStart - frame_start.load()).count();
+                const auto b = duration_cast<microseconds>(slotEnd - frame_start.load()).count();
+                std::cout << "qdisc: PLUG @" << std::setprecision(6)
+                          << (double)frame_start.load().time_since_epoch().count() / 1e9
+                          << " s   | " << std::setw(8) << std::setfill(' ') << a
+                          << "  --> " << std::setw(8) << std::setfill(' ') << b << " µs"
+                          << "   | real duration: " << std::setw(8) << std::setfill(' ') << b - a  << "µs"
+                          << "   | slot #" << current_slot.index << " len " << current_slot.length
+                          << (wrappedSlot? " (wrap around slot)" : "")
+                          << std::endl;
+            }
+
+            if (next_it != slots.end())
+            {
+                const auto& next_slot = *next_it;
+                const auto sleep_duration = (slot_duration * (next_slot.index - (current_slot.index + current_slot.length)));
+                std::this_thread::sleep_for(sleep_duration - jitter);
+
+                remaining = duration_cast<nanoseconds>(sleep_duration - (timestamp::clock::now() - slotStart));
+                cpu_spinner(remaining / nop_duration);
+            }
         }
 
         frame_start = frame_start.load() + frame_duration;
