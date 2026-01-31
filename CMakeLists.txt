@@ -36,9 +36,10 @@ target_include_directories(tc-tdma PRIVATE ${docopt_SOURCE_DIR}
                                            ${PCAP_INCLUDE_DIRS})
 
 target_link_libraries(tc-tdma PRIVATE ${PCAP_LIBRARIES}
-                                        ${LIBNL_LIBRARIES}
-                                        nl-route-3
-                                        docopt_s)
+                                      ${LIBNL_LIBRARIES}
+                                      atomic
+                                      nl-route-3
+                                      docopt_s)
 
 
 
