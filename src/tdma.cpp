@@ -62,7 +62,7 @@ void TDMAScheduler::resynchronize(TDMAScheduler::timestamp beacon, size_t TUs)
     // TODO: think about the synchronization here
     //std::lock_guard<std::mutex> guard(mutex);
     if (verbose)
-        std::cout << "qdisc SYNC: @" << std::fixed << std::setprecision(6) << (double)(beacon.time_since_epoch().count()) / 1e9
+        std::cout << "qdisc: SYNC @" << std::fixed << std::setprecision(6) << (double)(beacon.time_since_epoch().count()) / 1e9
                   << " s   |   beacon interval: " << TUs << " TUs" << std::endl;
 
     frame_start = beacon + frame_duration;
