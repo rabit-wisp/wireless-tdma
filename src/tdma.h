@@ -23,8 +23,7 @@ struct TDMAScheduler {
 
     std::atomic<timestamp> frame_start;
     std::chrono::microseconds frame_duration;
-
-    std::optional<size_t> count;
+    std::optional<size_t> frame_counter;       // number of frames to run for
 
     bool verbose;
 
