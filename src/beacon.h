@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <chrono>
+#include <optional>
 #include <functional>
 #include <thread>
 #include <pcap.h>
