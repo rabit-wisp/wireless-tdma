@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <pcap.h>
 #include <limits>
+#include <endian.h>
 #include "ieee80211.h"
 
 using std::chrono::operator""us;
@@ -16,6 +17,8 @@ Beacon::Beacon(std::string interface,
                                sync(func),
                                verbose(verbose)
 {
+    clock_offset_buffer.resize(50, std::chrono::microseconds(std::numeric_limits<long long>::max())); // look back 50 beacon broadcasts
+
     char errbuf[PCAP_ERRBUF_SIZE];
 
     handle = pcap_create(interface.c_str(), errbuf);
@@ -78,25 +81,24 @@ Beacon::Beacon(std::string interface,
         pcap_close(handle);
         throw std::exception();
     }
+
     // Set up filter for management frames (type 0)
     struct bpf_program fp;
     const char* filter_exp = "type mgt subtype beacon";
 
-    if (pcap_compile(handle, &fp, filter_exp, 0, PCAP_NETMASK_UNKNOWN) == -1) {
+    if (pcap_compile(handle, &fp, filter_exp, 1, PCAP_NETMASK_UNKNOWN) == -1) {
         std::cerr << "Error compiling filter: " << pcap_geterr(handle) << std::endl;
         pcap_close(handle);
         throw std::exception();
     }
-
     if (pcap_setfilter(handle, &fp) == -1) {
         std::cerr << "Error setting filter: " << pcap_geterr(handle) << std::endl;
         pcap_freecode(&fp);
         pcap_close(handle);
         throw std::exception();
     }
-
     pcap_freecode(&fp);
-    clock_offset_buffer.resize(50, std::chrono::microseconds(std::numeric_limits<long long>::max())); // look back 50 beacon broadcasts
+
 }
 
 Beacon::~Beacon()
@@ -175,35 +177,48 @@ void Beacon::update_clock_offset(std::chrono::microseconds tsf_epoch,
 void Beacon::packet_handler_impl(std::chrono::steady_clock::time_point rx, const struct pcap_pkthdr* pkthdr, const uint8_t* packet)
 {
     const radiotap_header* rtap = reinterpret_cast<const radiotap_header*>(packet);
-    int rtap_len = rtap->it_len;
+    const uint16_t rtap_len = le16toh(rtap->it_len);
+
+    if (pkthdr->caplen < rtap_len + sizeof(ieee80211_mgmt_header)) {
+        std::cerr << "Packet too short for 802.11 header" << std::endl;
+        return;
+    }
 
     // Parse 802.11 header (after radiotap)
     const ieee80211_mgmt_header* mgmt = reinterpret_cast<const ieee80211_mgmt_header*>(packet + rtap_len);
+    constexpr uint8_t beaconMagicNumber = 0x80; // the frame control 16 bit structure is actually bitpacked, but this is the beacon value
 
-    // filter by BSSID if it is set
-    if (!!bssid && bssid.value() != std::to_array(mgmt->bssid))
-        return;
-
-    // Check if this is a beacon frame (type=0, subtype=8)
-    if (mgmt->fc.type == 0 && mgmt->fc.subtype == 8)
+    if ((le16toh(mgmt->frame_control) & 0xFF) == beaconMagicNumber)
     {
-        const beacon_fixed_params* beacon = reinterpret_cast<const beacon_fixed_params*>(packet + rtap_len + sizeof(ieee80211_mgmt_header));
+        // filter by BSSID if it is set
+        if (!!bssid && bssid.value() != std::to_array(mgmt->bssid))
+            return;
+
+        size_t beacon_offset = rtap_len + sizeof(ieee80211_mgmt_header);
+        if (pkthdr->caplen < beacon_offset + sizeof(beacon_fixed_params)) {
+            std::cerr << "Packet too short for beacon body" << std::endl;
+            return;
+        }
+
+        const beacon_fixed_params* beacon = reinterpret_cast<const beacon_fixed_params*>(packet + beacon_offset);
+        const uint64_t tsf = le64toh(beacon->timestamp);
+        const uint16_t interval = le16toh(beacon->beacon_interval);
+
 
         // uint64_t reception_time_us = (uint64_t)pkthdr->ts.tv_sec * 1000000ULL + (uint64_t)pkthdr->ts.tv_usec;
         // the hardware reception time from the packet header is less useful than one might think as it is
         // a) not readily available on embedded hardware platforms, and b) irrelevant to our needs since we are trying to
         // compute the offset between local wall clock time and remote advertised TSF time.
 
-        update_clock_offset(std::chrono::microseconds(beacon->timestamp), rx);
+        update_clock_offset(std::chrono::microseconds(tsf), rx);
 
         if (verbose)
-            show_beacon(mgmt->bssid, rx.time_since_epoch().count() / 1000, beacon->timestamp);
+            show_beacon(mgmt->bssid, rx.time_since_epoch().count() / 1000, tsf);
 
         // don't synchronize if we don't yet know the offset between remote and local
         // (i.e. remote is simply a meaningless number)
         if (tsf_to_steady_clock_offset)
-            sync(std::chrono::steady_clock::time_point{} + (std::chrono::microseconds(beacon->timestamp) + tsf_to_steady_clock_offset.value()),
-                 beacon->beacon_interval);
+            sync(std::chrono::steady_clock::time_point{} + (std::chrono::microseconds(tsf) + tsf_to_steady_clock_offset.value()), interval);
     }
 };
 
