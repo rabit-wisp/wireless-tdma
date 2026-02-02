@@ -11,17 +11,9 @@ struct radiotap_header {
     uint32_t it_present;
 } __attribute__((packed));
 
-// 802.11 frame control
-struct frame_control {
-    uint8_t protocol_version : 2;
-    uint8_t type : 2;
-    uint8_t subtype : 4;
-    uint8_t flags;
-} __attribute__((packed));
-
 // 802.11 management frame header
 struct ieee80211_mgmt_header {
-    struct frame_control fc;
+    uint16_t frame_control;
     uint16_t duration;
     uint8_t da[6];  // destination address
     uint8_t sa[6];  // source address (BSSID for beacons)
