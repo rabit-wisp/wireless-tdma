@@ -80,23 +80,22 @@ Beacon::Beacon(std::string interface,
         pcap_close(handle);
         throw std::exception();
     }
+
     // Set up filter for management frames (type 0)
     struct bpf_program fp;
     const char* filter_exp = "type mgt subtype beacon";
 
-    if (pcap_compile(handle, &fp, filter_exp, 0, PCAP_NETMASK_UNKNOWN) == -1) {
+    if (pcap_compile(handle, &fp, filter_exp, 1, PCAP_NETMASK_UNKNOWN) == -1) {
         std::cerr << "Error compiling filter: " << pcap_geterr(handle) << std::endl;
         pcap_close(handle);
         throw std::exception();
     }
-
     if (pcap_setfilter(handle, &fp) == -1) {
         std::cerr << "Error setting filter: " << pcap_geterr(handle) << std::endl;
         pcap_freecode(&fp);
         pcap_close(handle);
         throw std::exception();
     }
-
     pcap_freecode(&fp);
 
 }
