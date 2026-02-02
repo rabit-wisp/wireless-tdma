@@ -16,6 +16,8 @@ Beacon::Beacon(std::string interface,
                                sync(func),
                                verbose(verbose)
 {
+    clock_offset_buffer.resize(50, std::chrono::microseconds(std::numeric_limits<long long>::max())); // look back 50 beacon broadcasts
+
     char errbuf[PCAP_ERRBUF_SIZE];
 
     handle = pcap_create(interface.c_str(), errbuf);
@@ -96,7 +98,7 @@ Beacon::Beacon(std::string interface,
     }
 
     pcap_freecode(&fp);
-    clock_offset_buffer.resize(50, std::chrono::microseconds(std::numeric_limits<long long>::max())); // look back 50 beacon broadcasts
+
 }
 
 Beacon::~Beacon()
