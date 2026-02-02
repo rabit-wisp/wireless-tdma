@@ -179,6 +179,10 @@ void Beacon::packet_handler_impl(std::chrono::steady_clock::time_point rx, const
     const radiotap_header* rtap = reinterpret_cast<const radiotap_header*>(packet);
     const uint16_t rtap_len = le16toh(rtap->it_len);
 
+    if (pkthdr->caplen < rtap_len + sizeof(ieee80211_mgmt_header)) {
+        std::cerr << "Packet too short for 802.11 header" << std::endl;
+        return;
+    }
 
     // Parse 802.11 header (after radiotap)
     const ieee80211_mgmt_header* mgmt = reinterpret_cast<const ieee80211_mgmt_header*>(packet + rtap_len);
@@ -190,6 +194,13 @@ void Beacon::packet_handler_impl(std::chrono::steady_clock::time_point rx, const
 
     if ((le16toh(mgmt->frame_control) & 0xFF) == beaconMagicNumber)
     {
+        size_t beacon_offset = rtap_len + sizeof(ieee80211_mgmt_header);
+        if (pkthdr->caplen < beacon_offset + sizeof(beacon_fixed_params)) {
+            std::cerr << "Packet too short for beacon body" << std::endl;
+            return;
+        }
+
+        const beacon_fixed_params* beacon = reinterpret_cast<const beacon_fixed_params*>(packet + beacon_offset);
         const uint64_t tsf = le64toh(beacon->timestamp);
         const uint16_t interval = le16toh(beacon->beacon_interval);
 
