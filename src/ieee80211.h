@@ -28,38 +28,4 @@ struct beacon_fixed_params {
     uint16_t capability_info;
 } __attribute__((packed));
 
-/*
-// Function to print MAC address
-void print_mac(const uint8_t* mac) {
-    for (int i = 0; i < 6; i++) {
-        std::cout << std::hex << std::setw(2) << std::setfill('0')
-                  << static_cast<int>(mac[i]);
-        if (i < 5) std::cout << ":";
-    }
-    std::cout << std::dec;
-}
-
-
-
-// Parse SSID from tagged parameters
-std::string parse_ssid(const uint8_t* data, int len) {
-    int pos = 0;
-    while (pos < len) {
-        uint8_t tag_number = data[pos];
-        uint8_t tag_length = data[pos + 1];
-
-        if (tag_number == 0) { // SSID tag
-            if (tag_length > 0 && pos + 2 + tag_length <= len) {
-                return std::string(reinterpret_cast<const char*>(&data[pos + 2]), tag_length);
-            }
-            return "<Hidden>";
-        }
-
-        pos += 2 + tag_length;
-        if (pos >= len) break;
-    }
-    return "<Unknown>";
-}
-*/
-
 #endif // _IEEE80211_H_
