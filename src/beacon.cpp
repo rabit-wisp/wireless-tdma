@@ -188,12 +188,12 @@ void Beacon::packet_handler_impl(std::chrono::steady_clock::time_point rx, const
     const ieee80211_mgmt_header* mgmt = reinterpret_cast<const ieee80211_mgmt_header*>(packet + rtap_len);
     constexpr uint8_t beaconMagicNumber = 0x80; // the frame control 16 bit structure is actually bitpacked, but this is the beacon value
 
-    // filter by BSSID if it is set
-    if (!!bssid && bssid.value() != std::to_array(mgmt->bssid))
-        return;
-
     if ((le16toh(mgmt->frame_control) & 0xFF) == beaconMagicNumber)
     {
+        // filter by BSSID if it is set
+        if (!!bssid && bssid.value() != std::to_array(mgmt->bssid))
+            return;
+
         size_t beacon_offset = rtap_len + sizeof(ieee80211_mgmt_header);
         if (pkthdr->caplen < beacon_offset + sizeof(beacon_fixed_params)) {
             std::cerr << "Packet too short for beacon body" << std::endl;
