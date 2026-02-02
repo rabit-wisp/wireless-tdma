@@ -55,7 +55,7 @@ protected:
     virtual std::string do_grouping() const { return "\03"; } // Group by 3
 };
 
-int show_beacon_stats(const std::string& interface, std::optional<std::array<uint8_t, 6>> bssid)
+int show_beacon_stats(const std::string& interface, std::optional<std::array<uint8_t, 6>> bssid, const bool ap_mode)
 {
     Beacon beacon(interface, bssid, [&](auto ts, auto... args){}, true);
 
@@ -205,7 +205,7 @@ int main(int argc, const char* argv[])
     try
     {
         if (beacon_only)
-            return show_beacon_stats(interface, bssid);
+            return show_beacon_stats(interface, bssid, ap_mode);
 
         QdiscController plug(interface, args["--buffer-size"].asLong(), verbose); // qdisc plug controller
 
