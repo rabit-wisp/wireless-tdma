@@ -1,3 +1,8 @@
+The plug scheduler module is usually not built into the kernel and must be build as a standalone .ko file. However these must match the kernel build exactly in order to be loadable. This process requires matching the build settings of the currently installed image/kernel. Without this, the kernel will not load the module.
+
+Below is a guide to quickly build a ko module without having to rebuild the entire image.
+
+-----
 
 Note: [guide here](https://openwrt.org/docs/guide-developer/toolchain/use-buildsystem#custom_files)
 
