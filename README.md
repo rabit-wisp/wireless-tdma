@@ -2,7 +2,7 @@
 
 # Cooperative Wifi 5 TDMA protocol
 
-This is a lightweight quick and dirty cooperative TDMA protocol implementation using linux qdisc/plug scheduler.
+This is a lightweight quick and dirty cooperative TDMA protocol implementation using linux qdisc/plug scheduler. It is meant to reduce ping variance on uncongested but high utilization wifi networks.
 
 
 ## Executive Summary
